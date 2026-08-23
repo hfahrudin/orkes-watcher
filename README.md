@@ -1,3 +1,5 @@
+<img src="logo.png" alt="Orkes Watcher logo" width="96" />
+
 # Orkes Watcher
 
 Orkes Watcher is an observability platform for agent graphs — it traces how a graph-based

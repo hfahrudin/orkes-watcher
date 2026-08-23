@@ -9,7 +9,7 @@ pre-implementation stage. Once releases begin, supported versions will be listed
 
 Please **do not** open a public GitHub issue for a security vulnerability.
 
-Instead, report it privately by emailing **hasby.fahrudin@mekari.com** with:
+Instead, report it privately by emailing **fahrudinhasby12@gmail.com** with:
 
 - A description of the vulnerability and its potential impact
 - Steps to reproduce, or a proof of concept if you have one

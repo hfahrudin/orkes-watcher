@@ -47,7 +47,7 @@ in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the
-project maintainers at **hasby.fahrudin@mekari.com**. All complaints will be reviewed and
+project maintainers at **fahrudinhasby12@gmail.com**. All complaints will be reviewed and
 investigated promptly and fairly.
 
 All project maintainers are obligated to respect the privacy and security of the reporter
