@@ -4,9 +4,14 @@ import * as api from '../lib/mockApi'
 import { formatDateTime, formatDuration } from '../lib/format'
 import type { EdgeEvent, NodeEvent, Run, TraceEvent } from '../lib/types'
 
-const STROKE: Record<EdgeEvent['edgeType'], string> = { forward: 'var(--c-muted)', conditional: 'var(--c-accent)', parallel: 'var(--c-c3)' }
-const DASH: Record<EdgeEvent['edgeType'], string | undefined> = { forward: undefined, conditional: '5 3', parallel: '10 4 2 4' }
-const MARKER: Record<EdgeEvent['edgeType'], string> = { forward: 'url(#ah-f)', conditional: 'url(#ah-c)', parallel: 'url(#ah-p)' }
+// edgeType isn't a closed set (see types.ts) — an unrecognized value falls back to the
+// "forward" look rather than rendering with no stroke at all.
+const STROKE: Record<string, string> = { forward: 'var(--c-muted)', conditional: 'var(--c-accent)', parallel: 'var(--c-c3)' }
+const DASH: Record<string, string | undefined> = { forward: undefined, conditional: '5 3', parallel: '10 4 2 4' }
+const MARKER: Record<string, string> = { forward: 'url(#ah-f)', conditional: 'url(#ah-c)', parallel: 'url(#ah-p)' }
+const strokeFor = (edgeType: string) => STROKE[edgeType] ?? STROKE.forward
+const dashFor = (edgeType: string) => (edgeType in DASH ? DASH[edgeType] : DASH.forward)
+const markerFor = (edgeType: string) => MARKER[edgeType] ?? MARKER.forward
 
 const NODE_W = 150
 const NODE_H = 36
@@ -223,7 +228,7 @@ export function TraceInspectorPage() {
                     const on = e.edgeId === selectedEdgeId
                     return (
                       <g key={e.edgeId}>
-                        <path d={e.d} fill="none" stroke={on ? 'var(--c-accent-strong)' : STROKE[e.edgeType]} strokeWidth={on ? 2.2 : 1.3} strokeDasharray={DASH[e.edgeType]} markerEnd={MARKER[e.edgeType]} opacity={on ? 1 : 0.72} />
+                        <path d={e.d} fill="none" stroke={on ? 'var(--c-accent-strong)' : strokeFor(e.edgeType)} strokeWidth={on ? 2.2 : 1.3} strokeDasharray={dashFor(e.edgeType)} markerEnd={markerFor(e.edgeType)} opacity={on ? 1 : 0.72} />
                         <path className="ghit" d={e.d} onClick={() => selectEdge(e.edgeId)} />
                       </g>
                     )
@@ -406,7 +411,7 @@ function EdgeInspector({ event, stateOpen, onToggleState }: { event: EdgeEvent; 
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '92px 1fr', gap: '7px 10px' }}>
         <KVRow label="edge_id" value={event.edgeId} color="var(--c-accent-strong)" />
-        <KVRow label="edge_type" value={event.edgeType} color={STROKE[event.edgeType]} />
+        <KVRow label="edge_type" value={event.edgeType} color={strokeFor(event.edgeType)} />
         <KVRow label="run seq" value={String(event.runSeq)} />
         {event.passesLeft !== null && <KVRow label="passes_left" value={String(event.passesLeft)} />}
         <KVRow label="elapsed" value={formatDuration(event.elapsedUs)} color="var(--c-text2)" />

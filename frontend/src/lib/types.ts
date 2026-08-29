@@ -63,7 +63,11 @@ export interface EdgeEvent {
   edgeId: string
   fromNode: string
   toNode: string
-  edgeType: 'forward' | 'conditional' | 'parallel'
+  // Not a closed union — the backend accepts any string here (it never branches on the
+  // value, only forwards it) so a new SDK-introduced edge type doesn't break ingest. The
+  // three known values below get real styling; anything else falls back to the "forward"
+  // look rather than rendering invisibly. See working_context/TRACES_CONTRACT.md.
+  edgeType: string
   runSeq: number
   passesLeft: number | null
   elapsedUs: number
