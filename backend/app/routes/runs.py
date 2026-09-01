@@ -25,9 +25,11 @@ async def list_runs(
     project: Project = Depends(require_project_access),
     status_filter: str | None = Query(default=None, alias="status"),
     search: str | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    return await run_repository.list_by_project(db, project.id, status=status_filter, search=search)
+    return await run_repository.list_by_project(db, project.id, status=status_filter, search=search, limit=limit, offset=offset)
 
 
 async def get_run_with_access(run_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> Run:

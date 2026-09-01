@@ -18,13 +18,13 @@ async def get(db: AsyncSession, run_id: uuid.UUID) -> Run | None:
     return await db.get(Run, run_id)
 
 
-async def list_by_project(db: AsyncSession, project_id: uuid.UUID, *, status: str | None = None, search: str | None = None, limit: int = 200) -> list[Run]:
+async def list_by_project(db: AsyncSession, project_id: uuid.UUID, *, status: str | None = None, search: str | None = None, limit: int = 200, offset: int = 0) -> list[Run]:
     stmt = select(Run).where(Run.project_id == project_id)
     if status:
         stmt = stmt.where(Run.status == status)
     if search:
         stmt = stmt.where(Run.graph_name.ilike(f"%{search}%"))
-    stmt = stmt.order_by(Run.started_at.desc()).limit(limit)
+    stmt = stmt.order_by(Run.started_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
@@ -89,7 +89,7 @@ async def hourly_counts(db: AsyncSession, project_id: uuid.UUID, since: datetime
     return [(row[0], row[1], row[2]) for row in result.all()]
 
 
-async def delete_expired(db: AsyncSession, *, before: datetime) -> list[Run]:
+async def delete_expired(db: AsyncSession, project_id: uuid.UUID, *, before: datetime) -> list[Run]:
     """Used by scripts/retention.py — caller deletes the MinIO blob first, then this row."""
-    result = await db.execute(select(Run).where(Run.started_at < before))
+    result = await db.execute(select(Run).where(Run.project_id == project_id, Run.started_at < before))
     return list(result.scalars().all())

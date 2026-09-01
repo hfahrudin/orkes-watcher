@@ -2,7 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import ConfigDict, Discriminator, Tag
+from pydantic import ConfigDict, Discriminator, Field, Tag
+
+MAX_BATCH_EVENTS = 5000
 
 from app.schemas.base import CamelModel
 
@@ -90,4 +92,4 @@ IngestEvent = Annotated[
 class IngestBatch(CamelModel):
     run_id: uuid.UUID
     graph_name: str
-    events: list[IngestEvent]
+    events: list[IngestEvent] = Field(max_length=MAX_BATCH_EVENTS)

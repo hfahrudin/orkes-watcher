@@ -5,7 +5,7 @@ script." Deletes the MinIO blob before the Postgres row (see DATABASE.md) — a 
 between the two leaves an orphaned blob, swept by scripts/sweep_orphan_blobs.py, rather
 than a runs row with a missing blob.
 
-Usage: uv run python scripts/retention.py
+Usage: uv run python -m scripts.retention
 """
 
 import asyncio
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.db import SessionLocal
+from app.config.db import SessionLocal
 from app.models.project import Project
 from app.repositories import run_repository, trace_blob_repository
 
@@ -24,7 +24,7 @@ async def main() -> None:
         total_deleted = 0
         for project in projects:
             cutoff = datetime.now(timezone.utc) - timedelta(days=project.retention_days)
-            expired = await run_repository.delete_expired(db, before=cutoff)
+            expired = await run_repository.delete_expired(db, project.id, before=cutoff)
             if not expired:
                 continue
             print(f"{project.name} ({project.id}): {len(expired)} runs older than {project.retention_days}d")

@@ -52,6 +52,15 @@ async def test_malformed_run_id_is_a_clean_422_not_a_500(admin_client: AsyncClie
     assert r.status_code == 422
 
 
+async def test_batch_over_max_events_is_rejected(admin_client: AsyncClient):
+    from app.schemas.trace_event import MAX_BATCH_EVENTS
+
+    _, secret = await _project_and_ingest_secret(admin_client)
+    events = [{"kind": "node", "nodeId": "n", "nodeName": "n", "seq": i, "visitIndex": 1, "enteredAt": "2026-08-23T09:00:00Z"} for i in range(MAX_BATCH_EVENTS + 1)]
+    r = await admin_client.post("/ingest/events", headers={"Authorization": f"Bearer {secret}"}, json={"runId": str(uuid.uuid4()), "graphName": "g", "events": events})
+    assert r.status_code == 422
+
+
 async def test_full_ingest_finalizes_run_and_computes_stats(admin_client: AsyncClient):
     project_id, secret = await _project_and_ingest_secret(admin_client)
     run_id = str(uuid.uuid4())
@@ -180,6 +189,26 @@ async def test_events_after_run_end_are_rejected_not_silently_applied(admin_clie
 
     unchanged = (await admin_client.get(f"/runs/{run_id}")).json()
     assert unchanged == original
+
+
+async def test_runs_list_pagination(admin_client: AsyncClient):
+    project_id, secret = await _project_and_ingest_secret(admin_client)
+    for _ in range(3):
+        await admin_client.post("/ingest/events", headers={"Authorization": f"Bearer {secret}"}, json=_happy_path_events(str(uuid.uuid4())))
+
+    r = await admin_client.get(f"/projects/{project_id}/runs?limit=2&offset=0")
+    assert r.status_code == 200
+    page1 = r.json()
+    assert len(page1) == 2
+
+    r = await admin_client.get(f"/projects/{project_id}/runs?limit=2&offset=2")
+    assert r.status_code == 200
+    page2 = r.json()
+    assert len(page2) == 1
+    assert {run["id"] for run in page1}.isdisjoint({run["id"] for run in page2})
+
+    r = await admin_client.get(f"/projects/{project_id}/runs?limit=501")
+    assert r.status_code == 422
 
 
 async def test_run_not_visible_to_non_member(admin_client: AsyncClient, login_as):
