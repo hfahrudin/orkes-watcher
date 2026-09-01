@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <marker id="tip" viewBox="0 0 8 8" refX="5.4" refY="4" markerWidth="4.4" markerHeight="4.4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#8f79e8"/>
+    </marker>
+  </defs>
+  <path d="M22.02 24.6A10.5 10.5 0 1 1 26.34 14.18" fill="none" stroke="#8f79e8" stroke-width="2.9" stroke-linecap="round" marker-end="url(#tip)"/>
+  <circle cx="22.02" cy="24.6" r="2.9" fill="#2ad6c4"/>
+  <circle cx="16" cy="16" r="3.3" fill="#2ad6c4"/>
+</svg>
