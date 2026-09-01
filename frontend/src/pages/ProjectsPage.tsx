@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import * as api from '../lib/mockApi'
+import * as api from '../lib/api'
 import { RoleGate } from '../components/RoleGate'
 import type { Project } from '../lib/types'
 

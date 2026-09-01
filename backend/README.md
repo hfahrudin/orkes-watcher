@@ -56,6 +56,21 @@ uv run python -m scripts.retention            # deletes runs (+ their blobs) pas
 uv run python -m scripts.sweep_orphan_blobs   # cleans up blobs whose runs row is already gone
 ```
 
+## Example data
+
+There's no real SDK yet (it lives in its own repo, per `ARCHITECTURE.md`) — until there is,
+`scripts.seed_example_traces` stands in for one. Unlike the two scripts above, it needs the
+backend actually running and reachable, since it calls `POST /ingest/events` over real HTTP
+exactly as an SDK would, rather than writing to Postgres/MinIO directly:
+
+```bash
+docker compose exec backend python -m scripts.seed_example_traces
+```
+
+Creates (or reuses) a `support-triage` project and seeds it with a few realistic traces —
+a happy path with a parallel branch, a retry loop that escalates, and a minimal one-shot
+success. See `working_context/TRACES_CONTRACT.md`.
+
 ## Tests
 
 ```bash

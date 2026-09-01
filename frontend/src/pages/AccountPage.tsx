@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import * as api from '../lib/mockApi'
+import * as api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 import { formatDateTime, formatRelativeTime } from '../lib/format'

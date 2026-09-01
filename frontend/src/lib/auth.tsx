@@ -1,33 +1,29 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import * as api from './mockApi'
+import * as api from './api'
 import type { Role, User } from './types'
 
 interface AuthState {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   hasRole: (...roles: Role[]) => boolean
 }
 
 const AuthContext = createContext<AuthState | null>(null)
-
-const STORAGE_KEY = 'orkes.session.user'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      try {
-        setUser(JSON.parse(raw))
-      } catch {
-        localStorage.removeItem(STORAGE_KEY)
-      }
-    }
-    setLoading(false)
+    // The session lives in an httpOnly cookie the browser already sends automatically —
+    // there's nothing for JS to read on its own, so the only way to know "am I logged in"
+    // on a fresh page load is to ask the backend.
+    api.me().then((u) => {
+      setUser(u)
+      setLoading(false)
+    })
   }, [])
 
   const value = useMemo<AuthState>(
@@ -37,11 +33,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login: async (email, password) => {
         const u = await api.login(email, password)
         setUser(u)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(u))
       },
-      logout: () => {
+      logout: async () => {
+        await api.logout()
         setUser(null)
-        localStorage.removeItem(STORAGE_KEY)
       },
       hasRole: (...roles) => !!user && roles.includes(user.role),
     }),

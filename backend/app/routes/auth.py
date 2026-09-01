@@ -20,7 +20,7 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
     except auth_service.InvalidCredentials:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
     await db.commit()
-    response.set_cookie(settings.session_cookie_name, session.id, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+    response.set_cookie(settings.session_cookie_name, session.id, httponly=True, samesite="lax", secure=settings.cookie_secure, max_age=60 * 60 * 24 * 30)
     return user
 
 
@@ -28,7 +28,7 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
 async def logout(response: Response, db: AsyncSession = Depends(get_db), session: SessionModel = Depends(get_current_session)):
     await auth_service.logout(db, session.id)
     await db.commit()
-    response.delete_cookie(settings.session_cookie_name)
+    response.delete_cookie(settings.session_cookie_name, samesite="lax", secure=settings.cookie_secure)
     return {"ok": True}
 
 

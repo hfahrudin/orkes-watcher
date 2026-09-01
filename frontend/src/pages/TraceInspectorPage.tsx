@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import * as api from '../lib/mockApi'
+import * as api from '../lib/api'
 import { formatDateTime, formatDuration } from '../lib/format'
 import type { EdgeEvent, NodeEvent, Run, TraceEvent } from '../lib/types'
 

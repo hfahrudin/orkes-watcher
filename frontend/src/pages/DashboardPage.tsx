@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import * as api from '../lib/mockApi'
+import * as api from '../lib/api'
 import { useCurrentProject } from '../components/AppShell'
 import { ProjectBreadcrumb } from '../components/ProjectBreadcrumb'
 import { EmptyState } from '../components/EmptyState'

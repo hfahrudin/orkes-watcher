@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import * as api from '../lib/mockApi'
+import * as api from '../lib/api'
 import { useCurrentProject } from '../components/AppShell'
 import { RoleGate } from '../components/RoleGate'
 import { formatRelativeTime } from '../lib/format'
@@ -10,12 +10,6 @@ const SCOPE_TAG: Record<ApiKey['scope'], string> = {
   ingest: 'tag tag-accent',
   read: 'tag tag-neutral',
   revoked: 'tag tag-outline',
-}
-
-const CREATED_BY_NAME: Record<string, string> = {
-  u_1: 'Hasby F.',
-  u_2: 'Dana P.',
-  u_3: 'Rian S.',
 }
 
 export function KeysPage() {
@@ -44,7 +38,8 @@ export function KeysPage() {
   }
 
   async function revoke(id: string) {
-    await api.revokeApiKey(id)
+    if (!projectId) return
+    await api.revokeApiKey(projectId, id)
     setKeys((k) => k.map((key) => (key.id === id ? { ...key, scope: 'revoked' } : key)))
   }
 
@@ -90,7 +85,7 @@ export function KeysPage() {
               <td>{k.label}</td>
               <td className="mono" style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--c-text) 62%, transparent)', whiteSpace: 'nowrap' }}>{k.prefix}••••</td>
               <td><span className={SCOPE_TAG[k.scope]}>{k.scope}</span></td>
-              <td style={{ color: 'color-mix(in srgb, var(--c-text) 62%, transparent)' }}>{CREATED_BY_NAME[k.createdBy] ?? k.createdBy}</td>
+              <td className="mono" style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 50%, transparent)' }} title={k.createdBy}>{k.createdBy.slice(0, 8)}</td>
               <td style={{ color: 'color-mix(in srgb, var(--c-text) 55%, transparent)' }}>{k.lastUsedAt ? formatRelativeTime(k.lastUsedAt) : 'never'}</td>
               <td style={{ textAlign: 'right' }}>
                 <RoleGate roles={['admin', 'developer']}>

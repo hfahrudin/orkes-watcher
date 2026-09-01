@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom'
-import * as api from '../lib/mockApi'
+import * as api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 import type { Project } from '../lib/types'
@@ -92,7 +92,7 @@ export function AppShell() {
             {resolved === 'dark' ? 'Light mode' : 'Dark mode'}
           </button>
           <div className="sdk-status">SDK 0.1.3 · ingest healthy</div>
-          <button className="sideitem" style={{ color: 'var(--c-muted)', fontSize: 11.5 }} onClick={() => { logout(); navigate('/login') }}>
+          <button className="sideitem" style={{ color: 'var(--c-muted)', fontSize: 11.5 }} onClick={async () => { await logout(); navigate('/login') }}>
             <i className="ph ph-sign-out" style={{ fontSize: 13 }} />
             Sign out
           </button>

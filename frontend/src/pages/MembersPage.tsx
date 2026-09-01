@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import * as api from '../lib/mockApi'
+import * as api from '../lib/api'
 import { RoleGate } from '../components/RoleGate'
 import { useAuth } from '../lib/auth'
 import type { Member, Role } from '../lib/types'

@@ -14,11 +14,11 @@ dependencies = [
     "bcrypt==4.2.1",
     "minio==7.2.13",
     "python-multipart==0.0.20",
+    "httpx==0.28.1",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx==0.28.1",
     "pytest==8.3.4",
     "pytest-asyncio==0.25.0",
 ]

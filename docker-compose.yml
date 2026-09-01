@@ -2,8 +2,18 @@ services:
   frontend:
     build:
       context: ./frontend
+    environment:
+      # Read at container *start* (docker/docker-entrypoint.sh), not baked in at build time
+      # — change this (or set API_URL directly in .env once there's a real domain) and
+      # `docker compose up -d` (no --build) is enough. Must be wherever the browser can
+      # actually reach the backend, not internal Docker service DNS, since it's the
+      # browser calling this, not the frontend container itself.
+      API_URL: ${API_URL:-http://localhost:${BACKEND_PORT:-8000}}
     ports:
       - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
   backend:
@@ -21,11 +31,18 @@ services:
       ORKES_BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@orkes.local}
       ORKES_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-changeme}
       ORKES_CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-8080}"]'
+      # Set to true once this sits behind real HTTPS — see settings.py's comment.
+      ORKES_COOKIE_SECURE: ${COOKIE_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   postgres:

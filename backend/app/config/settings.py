@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     minio_bucket: str = "orkes-traces"
 
     session_cookie_name: str = "orkes_session"
+    # False by default for local HTTP dev — a Secure cookie set over plain http:// is
+    # rejected or never sent back by most browsers. Set true once this actually sits
+    # behind HTTPS (see ORKES_COOKIE_SECURE in docker-compose.yml/.env.example).
+    cookie_secure: bool = False
     # MVP: no bus, single process — buffered ingest + live fan-out live in-memory.
     # None of this survives a restart; see ARCHITECTURE.md's "cut for MVP" list.
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
