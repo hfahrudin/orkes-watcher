@@ -1,4 +1,6 @@
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+
+from app.main import app
 
 
 async def _make_project(admin_client: AsyncClient) -> str:
@@ -9,7 +11,10 @@ async def test_invite_member(admin_client: AsyncClient):
     project_id = await _make_project(admin_client)
     r = await admin_client.post(f"/projects/{project_id}/members", json={"email": "new@test.local", "role": "viewer"})
     assert r.status_code == 200
-    assert r.json()["role"] == "viewer"
+    body = r.json()
+    assert body["member"]["role"] == "viewer"
+    assert body["member"]["status"] == "invited"
+    assert body["activationToken"]
 
 
 async def test_invite_existing_member_conflicts(admin_client: AsyncClient):
@@ -29,7 +34,7 @@ async def test_non_admin_cannot_invite(admin_client: AsyncClient, login_as):
 
 async def test_change_role_and_remove_member(admin_client: AsyncClient):
     project_id = await _make_project(admin_client)
-    member = (await admin_client.post(f"/projects/{project_id}/members", json={"email": "new@test.local", "role": "viewer"})).json()
+    member = (await admin_client.post(f"/projects/{project_id}/members", json={"email": "new@test.local", "role": "viewer"})).json()["member"]
 
     r = await admin_client.patch(f"/projects/{project_id}/members/{member['userId']}", json={"role": "developer"})
     assert r.status_code == 200
@@ -39,6 +44,34 @@ async def test_change_role_and_remove_member(admin_client: AsyncClient):
     assert r.status_code == 200
     emails = [m["email"] for m in (await admin_client.get(f"/projects/{project_id}/members")).json()]
     assert "new@test.local" not in emails
+
+
+async def test_resend_activation(admin_client: AsyncClient):
+    project_id = await _make_project(admin_client)
+    invite = (await admin_client.post(f"/projects/{project_id}/members", json={"email": "new@test.local", "role": "viewer"})).json()
+    user_id = invite["member"]["userId"]
+    first_token = invite["activationToken"]
+
+    r = await admin_client.post(f"/projects/{project_id}/members/{user_id}/resend-activation")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["activationToken"]
+    assert body["activationToken"] != first_token
+
+
+async def test_resend_activation_on_active_member_fails(admin_client: AsyncClient):
+    project_id = await _make_project(admin_client)
+    invite = (await admin_client.post(f"/projects/{project_id}/members", json={"email": "new@test.local", "role": "viewer"})).json()
+    user_id = invite["member"]["userId"]
+    token = invite["activationToken"]
+
+    # Activate via a separate, unauthenticated client — /auth/activate would otherwise
+    # overwrite admin_client's session cookie with the newly-activated user's session.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        await anon.post("/auth/activate", json={"token": token, "password": "password123"})
+
+    r = await admin_client.post(f"/projects/{project_id}/members/{user_id}/resend-activation")
+    assert r.status_code == 400
 
 
 async def test_developer_can_create_ingest_key_viewer_cannot(admin_client: AsyncClient, login_as):

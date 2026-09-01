@@ -16,6 +16,10 @@ function initials(name: string) {
   return name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 }
 
+function activationLink(token: string) {
+  return `${window.location.origin}/activate?token=${token}`
+}
+
 export function MembersPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { hasRole } = useAuth()
@@ -24,30 +28,67 @@ export function MembersPage() {
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('developer')
   const [defaultRole, setDefaultRole] = useState<Role>('developer')
+  const [activationDialog, setActivationDialog] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!projectId) return
-    api.listMembers(projectId).then(setMembers)
+    api.listMembers(projectId).then(setMembers).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load members'))
   }, [projectId])
 
   async function invite() {
     if (!projectId || !email.trim()) return
-    const member = await api.inviteMember(projectId, email.trim(), role)
-    setMembers((m) => [...m, member])
-    setInviting(false)
-    setEmail('')
+    setError(null)
+    try {
+      const { member, activationToken } = await api.inviteMember(projectId, email.trim(), role)
+      setMembers((m) => [...m, member])
+      setInviting(false)
+      setEmail('')
+      if (activationToken) setActivationDialog(activationLink(activationToken))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create user')
+    }
+  }
+
+  async function resendActivation(userId: string) {
+    if (!projectId) return
+    setError(null)
+    try {
+      const { activationToken } = await api.resendActivation(projectId, userId)
+      if (activationToken) setActivationDialog(activationLink(activationToken))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to resend activation link')
+    }
   }
 
   async function changeRole(userId: string, newRole: Role) {
     if (!projectId) return
-    await api.updateMemberRole(projectId, userId, newRole)
-    setMembers((m) => m.map((mem) => (mem.userId === userId ? { ...mem, role: newRole } : mem)))
+    setError(null)
+    try {
+      await api.updateMemberRole(projectId, userId, newRole)
+      setMembers((m) => m.map((mem) => (mem.userId === userId ? { ...mem, role: newRole } : mem)))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to change role')
+    }
   }
 
   async function remove(userId: string) {
     if (!projectId) return
-    await api.removeMember(projectId, userId)
-    setMembers((m) => m.filter((mem) => mem.userId !== userId))
+    setError(null)
+    try {
+      await api.removeMember(projectId, userId)
+      setMembers((m) => m.filter((mem) => mem.userId !== userId))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to remove member')
+    }
+  }
+
+  function copyLink(link: string) {
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
   }
 
   const counts = ROLE_CARDS.map((c) => ({ ...c, count: members.filter((m) => m.role === c.role).length }))
@@ -68,6 +109,8 @@ export function MembersPage() {
           </button>
         </RoleGate>
       </div>
+
+      {error && <p style={{ color: 'var(--color-danger)', fontSize: 13, margin: 0 }}>{error}</p>}
 
       <RoleGate roles={['admin']}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 15px', borderRadius: 9, background: 'var(--c-panel)', boxShadow: 'inset 0 0 0 1px var(--color-divider)' }}>
@@ -102,6 +145,7 @@ export function MembersPage() {
             <tr>
               <th>Member</th>
               <th>Role</th>
+              <th>Status</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
@@ -130,9 +174,17 @@ export function MembersPage() {
                     <span className={ROLE_TAG[m.role]}>{m.role}</span>
                   )}
                 </td>
+                <td>
+                  <span className={m.status === 'invited' ? 'tag tag-outline' : 'tag tag-neutral'}>{m.status}</span>
+                </td>
                 <td style={{ textAlign: 'right' }}>
                   <RoleGate roles={['admin']}>
-                    <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => remove(m.userId)}>Remove</button>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      {m.status === 'invited' && (
+                        <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => resendActivation(m.userId)}>Resend link</button>
+                      )}
+                      <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => remove(m.userId)}>Remove</button>
+                    </div>
                   </RoleGate>
                 </td>
               </tr>
@@ -163,6 +215,20 @@ export function MembersPage() {
             <div className="dialog-actions">
               <button className="btn btn-secondary" onClick={() => setInviting(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={invite}>Create user</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activationDialog && (
+        <div className="dialog-backdrop" onClick={() => setActivationDialog(null)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-title">Activation link</div>
+            <p className="dialog-body">There's no email sending yet — copy this link and send it to them yourself. It expires in 7 days.</p>
+            <pre className="raw-json" style={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{activationDialog}</pre>
+            <div className="dialog-actions">
+              <button className="btn btn-secondary" onClick={() => copyLink(activationDialog)}>{copied ? 'Copied' : 'Copy link'}</button>
+              <button className="btn btn-primary" onClick={() => setActivationDialog(null)}>Done</button>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import * as api from '../lib/api'
 import { useCurrentProject } from '../components/AppShell'
 import { ProjectBreadcrumb } from '../components/ProjectBreadcrumb'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { formatDuration } from '../lib/format'
 import type { Run, RunStatus } from '../lib/types'
 
@@ -25,11 +26,17 @@ export function TracesPage() {
   const [runs, setRuns] = useState<Run[] | null>(null)
   const [status, setStatus] = useState<RunStatus | 'all'>('all')
   const [search, setSearch] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
     if (!projectId) return
     setRuns(null)
-    api.listRuns(projectId).then(setRuns)
+    setError(null)
+    api.listRuns(projectId).then(setRuns).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load traces'))
+  }
+
+  useEffect(() => {
+    load()
   }, [projectId])
 
   const filtered = useMemo(() => {
@@ -41,6 +48,7 @@ export function TracesPage() {
     })
   }, [runs, status, search])
 
+  if (error) return <ErrorState message={error} onRetry={load} />
   if (!runs) return <p className="text-muted">Loading…</p>
 
   if (runs.length === 0) {

@@ -4,6 +4,7 @@ import { ThemeProvider } from './lib/theme'
 import { AppShell } from './components/AppShell'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { LoginPage } from './pages/LoginPage'
+import { ActivatePage } from './pages/ActivatePage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { TracesPage } from './pages/TracesPage'
@@ -24,6 +25,7 @@ function Routed() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/activate" element={<ActivatePage />} />
       <Route
         element={
           <RequireAuth>

@@ -22,6 +22,10 @@ class User(Base):
     role: Mapped[str] = mapped_column(Role, nullable=False, default="developer")
     status: Mapped[str] = mapped_column(UserStatus, nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Set when status="invited", cleared on activation. Nullable+unique rather than a
+    # separate table — this project has no other use for a generic "tokens" concept yet.
+    activation_token: Mapped[str | None] = mapped_column(String, unique=True, index=True, nullable=True)
+    activation_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Session(Base):

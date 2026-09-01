@@ -37,6 +37,14 @@ class MemberOut(CamelModel):
     name: str
     email: str
     role: Role
+    status: Literal["active", "invited"]
+
+
+class MemberInviteResponse(CamelModel):
+    member: MemberOut
+    # Only set right after invite/resend, so the caller can hand the invitee a link —
+    # there's no email sending yet, see FRONTEND.md's cut list.
+    activation_token: str | None = None
 
 
 class MemberCreate(CamelModel):

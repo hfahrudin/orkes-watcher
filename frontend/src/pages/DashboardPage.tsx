@@ -4,6 +4,7 @@ import * as api from '../lib/api'
 import { useCurrentProject } from '../components/AppShell'
 import { ProjectBreadcrumb } from '../components/ProjectBreadcrumb'
 import { EmptyState } from '../components/EmptyState'
+import { ErrorState } from '../components/ErrorState'
 import { formatDuration } from '../lib/format'
 import type { NodeStat, Run } from '../lib/types'
 
@@ -34,13 +35,20 @@ export function DashboardPage() {
   const project = useCurrentProject()
   const navigate = useNavigate()
   const [stats, setStats] = useState<Stats | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
     if (!projectId) return
     setStats(null)
-    api.getProjectStats(projectId).then(setStats)
+    setError(null)
+    api.getProjectStats(projectId).then(setStats).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load dashboard stats'))
+  }
+
+  useEffect(() => {
+    load()
   }, [projectId])
 
+  if (error) return <ErrorState message={error} onRetry={load} />
   if (!stats) return <p className="text-muted">Loading…</p>
 
   const totalRuns = stats.byOutcome.running + stats.byOutcome.finished + stats.byOutcome.failed

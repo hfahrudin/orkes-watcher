@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import * as api from '../lib/api'
 import { useCurrentProject } from '../components/AppShell'
 import { RoleGate } from '../components/RoleGate'
+import { ErrorState } from '../components/ErrorState'
 import { formatRelativeTime } from '../lib/format'
 import type { ApiKey } from '../lib/types'
 
@@ -15,44 +16,71 @@ const SCOPE_TAG: Record<ApiKey['scope'], string> = {
 export function KeysPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const project = useCurrentProject()
-  const [keys, setKeys] = useState<ApiKey[]>([])
+  const [keys, setKeys] = useState<ApiKey[] | null>(null)
   const [creating, setCreating] = useState(false)
   const [label, setLabel] = useState('')
   const [scope, setScope] = useState<'ingest' | 'read'>('ingest')
   const [newSecret, setNewSecret] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
   const [verified, setVerified] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  function load() {
+    if (!projectId) return
+    setLoadError(null)
+    api.listApiKeys(projectId).then(setKeys).catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load API keys'))
+  }
 
   useEffect(() => {
-    if (!projectId) return
-    api.listApiKeys(projectId).then(setKeys)
+    load()
   }, [projectId])
 
   async function create() {
     if (!projectId || !label.trim()) return
-    const { key, secret } = await api.createApiKey(projectId, label.trim(), scope)
-    setKeys((k) => [...k, key])
-    setNewSecret(secret)
-    setCreating(false)
-    setLabel('')
+    setActionError(null)
+    try {
+      const { key, secret } = await api.createApiKey(projectId, label.trim(), scope)
+      setKeys((k) => [...(k ?? []), key])
+      setNewSecret(secret)
+      setCreating(false)
+      setLabel('')
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to create key')
+    }
   }
 
   async function revoke(id: string) {
     if (!projectId) return
-    await api.revokeApiKey(projectId, id)
-    setKeys((k) => k.map((key) => (key.id === id ? { ...key, scope: 'revoked' } : key)))
+    setActionError(null)
+    try {
+      await api.revokeApiKey(projectId, id)
+      setKeys((k) => (k ?? []).map((key) => (key.id === id ? { ...key, scope: 'revoked' } : key)))
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to revoke key')
+    }
   }
 
   async function verifyIngest() {
     if (!projectId) return
+    setActionError(null)
     setVerifying(true)
-    const runs = await api.listRuns(projectId)
-    setVerifying(false)
-    setVerified(runs.length > 0)
+    try {
+      const runs = await api.listRuns(projectId)
+      setVerified(runs.length > 0)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to verify ingest')
+    } finally {
+      setVerifying(false)
+    }
   }
+
+  if (loadError) return <ErrorState message={loadError} onRetry={load} />
+  if (!keys) return <p className="text-muted">Loading…</p>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {actionError && <p style={{ color: 'var(--color-danger)', fontSize: 13, margin: 0 }}>{actionError}</p>}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ margin: 0 }}>API keys</h4>

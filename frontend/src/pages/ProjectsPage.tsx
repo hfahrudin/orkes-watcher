@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as api from '../lib/api'
 import { RoleGate } from '../components/RoleGate'
+import { ErrorState } from '../components/ErrorState'
 import type { Project } from '../lib/types'
 
 const ENV_TAG: Record<Project['env'], string> = {
@@ -22,34 +23,52 @@ interface Stats {
 }
 
 export function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([])
+  const [projects, setProjects] = useState<Project[] | null>(null)
   const [stats, setStats] = useState<Record<string, Stats>>({})
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [env, setEnv] = useState<Project['env']>('production')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
   const navigate = useNavigate()
 
+  function load() {
+    setLoadError(null)
+    api
+      .listProjects()
+      .then(async (list) => {
+        setProjects(list)
+        const entries = await Promise.all(
+          list.map(async (p) => {
+            const [runs, keys] = await Promise.all([api.listRuns(p.id), api.listApiKeys(p.id)])
+            return [p.id, { runs: runs.length, keys: keys.length }] as const
+          }),
+        )
+        setStats(Object.fromEntries(entries))
+      })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load projects'))
+  }
+
   useEffect(() => {
-    api.listProjects().then(async (list) => {
-      setProjects(list)
-      const entries = await Promise.all(
-        list.map(async (p) => {
-          const [runs, keys] = await Promise.all([api.listRuns(p.id), api.listApiKeys(p.id)])
-          return [p.id, { runs: runs.length, keys: keys.length }] as const
-        }),
-      )
-      setStats(Object.fromEntries(entries))
-    })
+    load()
   }, [])
 
   async function createProject() {
     if (!name.trim()) return
-    const project = await api.createProject({ name: name.trim(), env })
-    setProjects((p) => [...p, project])
-    setCreating(false)
-    setName('')
-    navigate(`/${project.id}/dashboard`)
+    setCreateError(null)
+    try {
+      const project = await api.createProject({ name: name.trim(), env })
+      setProjects((p) => [...(p ?? []), project])
+      setCreating(false)
+      setName('')
+      navigate(`/${project.id}/dashboard`)
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : 'Failed to create project')
+    }
   }
+
+  if (loadError) return <ErrorState message={loadError} onRetry={load} />
+  if (!projects) return <p className="text-muted">Loading…</p>
 
   return (
     <div>
@@ -129,6 +148,7 @@ export function ProjectsPage() {
                 </div>
               </div>
             </div>
+            {createError && <p style={{ color: 'var(--color-danger)', fontSize: 13, margin: 0 }}>{createError}</p>}
             <div className="dialog-actions">
               <button className="btn btn-secondary" onClick={() => setCreating(false)}>
                 Cancel

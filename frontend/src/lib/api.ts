@@ -59,6 +59,18 @@ export async function login(email: string, password: string): Promise<User> {
   return request<User>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }), suppressAuthRedirect: true })
 }
 
+export async function activateAccount(token: string, password: string, name?: string): Promise<User> {
+  return request<User>('/auth/activate', { method: 'POST', body: JSON.stringify({ token, password, name }), suppressAuthRedirect: true })
+}
+
+export async function updateProfile(name: string): Promise<User> {
+  return request<User>('/me', { method: 'PATCH', body: JSON.stringify({ name }) })
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request<void>('/me/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+}
+
 export async function logout(): Promise<void> {
   await request<void>('/auth/logout', { method: 'POST' })
 }
@@ -135,8 +147,17 @@ export async function listMembers(projectId: string): Promise<Member[]> {
   return request<Member[]>(`/projects/${projectId}/members`)
 }
 
-export async function inviteMember(projectId: string, email: string, role: Member['role']): Promise<Member> {
-  return request<Member>(`/projects/${projectId}/members`, { method: 'POST', body: JSON.stringify({ email, role }) })
+interface MemberInviteResult {
+  member: Member
+  activationToken: string | null
+}
+
+export async function inviteMember(projectId: string, email: string, role: Member['role']): Promise<MemberInviteResult> {
+  return request<MemberInviteResult>(`/projects/${projectId}/members`, { method: 'POST', body: JSON.stringify({ email, role }) })
+}
+
+export async function resendActivation(projectId: string, userId: string): Promise<MemberInviteResult> {
+  return request<MemberInviteResult>(`/projects/${projectId}/members/${userId}/resend-activation`, { method: 'POST' })
 }
 
 export async function updateMemberRole(projectId: string, userId: string, role: Member['role']): Promise<void> {

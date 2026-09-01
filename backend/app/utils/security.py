@@ -15,6 +15,10 @@ def new_session_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def new_activation_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
 def generate_api_key(scope: str) -> tuple[str, str, str]:
     """Returns (prefix, secret_hash, full_key). `full_key` is shown once, never stored."""
     kind = "live" if scope == "ingest" else "test"

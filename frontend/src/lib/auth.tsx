@@ -8,6 +8,8 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   hasRole: (...roles: Role[]) => boolean
+  activate: (token: string, password: string, name?: string) => Promise<void>
+  setUser: (user: User) => void
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -39,6 +41,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null)
       },
       hasRole: (...roles) => !!user && roles.includes(user.role),
+      activate: async (token, password, name) => {
+        const u = await api.activateAccount(token, password, name)
+        setUser(u)
+      },
+      setUser,
     }),
     [user, loading],
   )

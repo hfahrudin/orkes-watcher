@@ -8,24 +8,80 @@ import type { Session } from '../lib/types'
 const SESSION_ICON: Record<Session['kind'], string> = { browser: 'ph-monitor', cli: 'ph-terminal-window' }
 
 export function AccountPage() {
-  const { user } = useAuth()
+  const { user, setUser } = useAuth()
   const { preference, setPreference } = useTheme()
   const [sessions, setSessions] = useState<Session[]>([])
   const [name, setName] = useState(user?.name ?? '')
   const [saved, setSaved] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [savingName, setSavingName] = useState(false)
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSaved, setPasswordSaved] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+
+  const [sessionsError, setSessionsError] = useState<string | null>(null)
 
   useEffect(() => {
-    api.listSessions().then(setSessions)
+    api.listSessions().then(setSessions).catch((e) => setSessionsError(e instanceof Error ? e.message : 'Failed to load sessions'))
   }, [])
 
   async function signOutSession(id: string) {
-    await api.revokeSession(id)
-    setSessions((s) => s.filter((sess) => sess.id !== id))
+    setSessionsError(null)
+    try {
+      await api.revokeSession(id)
+      setSessions((s) => s.filter((sess) => sess.id !== id))
+    } catch (e) {
+      setSessionsError(e instanceof Error ? e.message : 'Failed to sign out that session')
+    }
   }
 
   async function signOutOthers() {
-    await api.revokeOtherSessions()
-    setSessions((s) => s.filter((sess) => sess.current))
+    setSessionsError(null)
+    try {
+      await api.revokeOtherSessions()
+      setSessions((s) => s.filter((sess) => sess.current))
+    } catch (e) {
+      setSessionsError(e instanceof Error ? e.message : 'Failed to sign out other sessions')
+    }
+  }
+
+  async function saveName() {
+    if (!name.trim()) return
+    setNameError(null)
+    setSavingName(true)
+    try {
+      const updated = await api.updateProfile(name.trim())
+      setUser(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
+    } catch (e) {
+      setNameError(e instanceof Error ? e.message : 'Failed to save name')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  async function submitPasswordChange() {
+    setPasswordError(null)
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters.')
+      return
+    }
+    setChangingPassword(true)
+    try {
+      await api.changePassword(currentPassword, newPassword)
+      setCurrentPassword('')
+      setNewPassword('')
+      setPasswordSaved(true)
+      setTimeout(() => setPasswordSaved(false), 1500)
+    } catch (e) {
+      setPasswordError(e instanceof Error ? e.message : 'Failed to change password')
+    } finally {
+      setChangingPassword(false)
+    }
   }
 
   return (
@@ -43,9 +99,12 @@ export function AccountPage() {
             <span style={{ fontSize: 13.5 }}>Name</span>
             <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>Shown on traces you replay and keys you create.</span>
           </div>
-          <div style={{ flex: 1, display: 'flex', gap: 8 }}>
-            <input className="input" style={{ flex: 1 }} value={name} onChange={(e) => setName(e.target.value)} />
-            <button className="btn btn-secondary" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 1500) }}>Save</button>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="input" style={{ flex: 1 }} value={name} onChange={(e) => setName(e.target.value)} />
+              <button className="btn btn-secondary" onClick={saveName} disabled={savingName}>{savingName ? 'Saving…' : 'Save'}</button>
+            </div>
+            {nameError && <span style={{ color: 'var(--color-danger)', fontSize: 12 }}>{nameError}</span>}
           </div>
         </div>
 
@@ -63,18 +122,22 @@ export function AccountPage() {
         <div className="srow">
           <div>
             <span style={{ fontSize: 13.5 }}>Password</span>
-            <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>Last changed 2 months ago.</span>
+            <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>Choose a new password for this account.</span>
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
             <div className="field" style={{ width: '100%' }}>
               <label>Current password</label>
-              <input className="input" type="password" placeholder="••••••••••" />
+              <input className="input" type="password" placeholder="••••••••••" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
             </div>
             <div className="field" style={{ width: '100%' }}>
               <label>New password</label>
-              <input className="input" type="password" placeholder="••••••••••" />
+              <input className="input" type="password" placeholder="At least 8 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
             </div>
-            <button className="btn btn-secondary">Change password</button>
+            {passwordError && <span style={{ color: 'var(--color-danger)', fontSize: 12 }}>{passwordError}</span>}
+            {passwordSaved && <span style={{ color: 'var(--color-success)', fontSize: 12 }}>Password changed.</span>}
+            <button className="btn btn-secondary" onClick={submitPasswordChange} disabled={changingPassword || !currentPassword || !newPassword}>
+              {changingPassword ? 'Changing…' : 'Change password'}
+            </button>
           </div>
         </div>
 
@@ -98,6 +161,7 @@ export function AccountPage() {
             <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>Signed-in browsers and CLI tokens on this account.</span>
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 9 }}>
+            {sessionsError && <span style={{ color: 'var(--color-danger)', fontSize: 12 }}>{sessionsError}</span>}
             {sessions.map((s) => (
               <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', borderRadius: 7, background: 'var(--c-panel)', boxShadow: 'inset 0 0 0 1px var(--color-divider)' }}>
                 <i className={`ph ${SESSION_ICON[s.kind]}`} style={{ fontSize: 15, color: 'var(--color-accent-400)' }} />

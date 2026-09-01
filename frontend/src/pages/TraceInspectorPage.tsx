@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as api from '../lib/api'
+import { ErrorState } from '../components/ErrorState'
 import { formatDateTime, formatDuration } from '../lib/format'
 import type { EdgeEvent, NodeEvent, Run, TraceEvent } from '../lib/types'
 
@@ -117,14 +118,24 @@ export function TraceInspectorPage() {
   const [viewMode, setViewMode] = useState<'graph' | 'timeline' | 'raw'>('graph')
   const [legendOpen, setLegendOpen] = useState(false)
   const [stateOpen, setStateOpen] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
     if (!runId) return
     setRun(null)
     setEvents([])
     setSelected(null)
-    api.getRun(runId).then((r) => setRun(r ?? null))
-    api.getRunEvents(runId).then(setEvents)
+    setError(null)
+    Promise.all([api.getRun(runId), api.getRunEvents(runId)])
+      .then(([r, evs]) => {
+        setRun(r ?? null)
+        setEvents(evs)
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load trace'))
+  }
+
+  useEffect(() => {
+    load()
   }, [runId])
 
   useEffect(() => {
@@ -172,6 +183,7 @@ export function TraceInspectorPage() {
     if (ev) setSelected({ kind: 'edge', event: ev })
   }
 
+  if (error) return <ErrorState message={error} onRetry={load} />
   if (!run) return <p className="text-muted">Loading…</p>
 
   return (

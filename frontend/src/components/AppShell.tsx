@@ -35,9 +35,15 @@ export function AppShell() {
   const { user, logout, hasRole } = useAuth()
   const { resolved, setPreference } = useTheme()
   const [projects, setProjects] = useState<Project[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  function loadProjects() {
+    setError(null)
+    api.listProjects().then(setProjects).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load projects'))
+  }
 
   useEffect(() => {
-    api.listProjects().then(setProjects)
+    loadProjects()
   }, [])
 
   const current = projects.find((p) => p.id === projectId)
@@ -56,6 +62,13 @@ export function AppShell() {
           <i className="ph ph-folders" />
           All projects
         </NavLink>
+
+        {error && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', borderRadius: 7, background: 'var(--c-panel)', boxShadow: 'inset 0 0 0 1px var(--color-divider)' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--color-danger)' }}>{error}</span>
+            <button className="btn btn-ghost btn-sm" onClick={loadProjects}>Retry</button>
+          </div>
+        )}
 
         {current && (
           <>

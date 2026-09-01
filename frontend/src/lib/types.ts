@@ -94,6 +94,7 @@ export interface Member {
   name: string
   email: string
   role: Role
+  status: 'active' | 'invited'
 }
 
 export interface Session {

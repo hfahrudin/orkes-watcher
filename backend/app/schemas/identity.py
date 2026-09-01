@@ -2,6 +2,8 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
+from pydantic import Field
+
 from app.schemas.base import CamelModel
 
 Role = Literal["admin", "developer", "viewer"]
@@ -28,3 +30,18 @@ class SessionOut(CamelModel):
 class LoginRequest(CamelModel):
     email: str
     password: str
+
+
+class ActivateRequest(CamelModel):
+    token: str
+    password: str = Field(min_length=8)
+    name: str | None = None
+
+
+class UpdateMeRequest(CamelModel):
+    name: str
+
+
+class ChangePasswordRequest(CamelModel):
+    current_password: str
+    new_password: str = Field(min_length=8)

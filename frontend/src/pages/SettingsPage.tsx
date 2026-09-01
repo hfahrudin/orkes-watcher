@@ -4,6 +4,7 @@ import * as api from '../lib/api'
 import { useCurrentProject } from '../components/AppShell'
 import { ProjectBreadcrumb } from '../components/ProjectBreadcrumb'
 import { RoleGate } from '../components/RoleGate'
+import { ErrorState } from '../components/ErrorState'
 import type { Project } from '../lib/types'
 
 const RETENTION_OPTIONS = [7, 30, 90]
@@ -18,25 +19,44 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmName, setConfirmName] = useState('')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  function load() {
+    if (!projectId) return
+    setLoadError(null)
+    api.getProject(projectId).then((p) => setForm(p ?? null)).catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load project'))
+    api.listRuns(projectId).then((runs) => setRunCount(runs.length)).catch(() => {})
+  }
 
   useEffect(() => {
-    if (!projectId) return
-    api.getProject(projectId).then((p) => setForm(p ?? null))
-    api.listRuns(projectId).then((runs) => setRunCount(runs.length))
+    load()
   }, [projectId])
 
+  if (loadError) return <ErrorState message={loadError} onRetry={load} />
   if (!form) return <p className="text-muted">Loading…</p>
 
   async function save(patch: Partial<Pick<Project, 'name' | 'retentionDays' | 'samplingPct'>>) {
-    const updated = await api.updateProject(form!.id, patch)
-    setForm(updated)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+    setSaveError(null)
+    try {
+      const updated = await api.updateProject(form!.id, patch)
+      setForm(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to save changes')
+    }
   }
 
   async function confirmDelete() {
-    await api.deleteProject(form!.id)
-    navigate('/projects')
+    setDeleteError(null)
+    try {
+      await api.deleteProject(form!.id)
+      navigate('/projects')
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete project')
+    }
   }
 
   const endpoint = `https://ingest.orkes.dev/v1/${form.name}`
@@ -142,6 +162,7 @@ export function SettingsPage() {
       </div>
 
       {saved && <p style={{ position: 'fixed', bottom: 20, right: 20, color: 'var(--color-success)', fontSize: 13 }}>Saved.</p>}
+      {saveError && <p style={{ position: 'fixed', bottom: 20, right: 20, color: 'var(--color-danger)', fontSize: 13 }}>{saveError}</p>}
 
       {deleting && (
         <div className="dialog-backdrop" onClick={() => setDeleting(false)}>
@@ -152,6 +173,7 @@ export function SettingsPage() {
               <label>Project name</label>
               <input className="input" placeholder={form.name} value={confirmName} onChange={(e) => setConfirmName(e.target.value)} autoFocus />
             </div>
+            {deleteError && <p style={{ color: 'var(--color-danger)', fontSize: 13, margin: 0 }}>{deleteError}</p>}
             <div className="dialog-actions">
               <button className="btn btn-secondary" onClick={() => setDeleting(false)}>Cancel</button>
               <button className="btn btn-danger" disabled={confirmName !== form.name} onClick={confirmDelete}>
