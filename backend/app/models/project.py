@@ -19,6 +19,8 @@ class Project(Base):
     env: Mapped[str] = mapped_column(Env, nullable=False, default="production")
     retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     sampling_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=100)
+    # A running run with no new batch for this long is marked failed ("abandoned").
+    abandon_after_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

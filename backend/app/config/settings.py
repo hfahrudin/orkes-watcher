@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # None of this survives a restart; see ARCHITECTURE.md's "cut for MVP" list.
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
 
+    # How often the in-process sweep checks for abandoned runs (no batch for a project's
+    # abandon_after_minutes). 0 disables it.
+    abandon_sweep_interval_seconds: int = 60
+
     bootstrap_admin_email: str = "admin@orkes.local"
     bootstrap_admin_password: str = "changeme"
     bootstrap_admin_name: str = "Admin"

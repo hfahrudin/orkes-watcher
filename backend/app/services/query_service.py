@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.models.run import Run
 from app.repositories import node_stat_repository, run_repository, trace_blob_repository
+from app.services.run_stats import order_events
 from app.services.live_service import live_registry
 
 
@@ -50,9 +51,10 @@ async def get_project_stats(db: AsyncSession, project_id: uuid.UUID) -> dict[str
 async def get_run_events(run: Run) -> list[dict[str, Any]]:
     """Dual-source read per DATABASE.md: a running trace's events come from the in-memory
     buffer; a finished/failed trace's come from its MinIO blob (empty if it was sampled
-    away — a successful run that was never flushed)."""
+    away — a successful run that was never flushed). Events come back exactly as orkes
+    sent them (snake_case), ordered by edge_run_number."""
     if run.status == "running":
-        return live_registry.buffer(str(run.id))
+        return order_events(live_registry.buffer(str(run.id)))
     blob = await run_in_threadpool(trace_blob_repository.get_trace, run.project_id, run.id)
     if blob is None:
         return []

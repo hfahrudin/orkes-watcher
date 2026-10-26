@@ -4,11 +4,30 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.project import Project
 from app.models.run import Run
 
 
-async def create(db: AsyncSession, *, run_id: uuid.UUID, project_id: uuid.UUID, graph_name: str, started_at: datetime) -> Run:
-    run = Run(id=run_id, project_id=project_id, graph_name=graph_name, status="running", started_at=started_at)
+async def create(
+    db: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    project_id: uuid.UUID,
+    graph_name: str,
+    started_at: datetime,
+    contract_version: str | None = None,
+    sdk_version: str | None = None,
+) -> Run:
+    run = Run(
+        id=run_id,
+        project_id=project_id,
+        graph_name=graph_name,
+        status="running",
+        started_at=started_at,
+        last_event_at=started_at,
+        contract_version=contract_version,
+        sdk_version=sdk_version,
+    )
     db.add(run)
     await db.flush()
     return run
@@ -34,15 +53,19 @@ async def finish(
     run: Run,
     *,
     status: str,
+    started_at: datetime,
     finished_at: datetime,
     node_count: int,
     edge_count: int,
     loop_count: int,
     elapsed_us: int,
     error: str | None,
+    failed_node: str | None = None,
 ) -> Run:
     run.status = status
+    run.started_at = started_at
     run.finished_at = finished_at
+    run.failed_node = failed_node
     run.node_count = node_count
     run.edge_count = edge_count
     run.loop_count = loop_count
@@ -93,3 +116,13 @@ async def delete_expired(db: AsyncSession, project_id: uuid.UUID, *, before: dat
     """Used by scripts/retention.py — caller deletes the MinIO blob first, then this row."""
     result = await db.execute(select(Run).where(Run.project_id == project_id, Run.started_at < before))
     return list(result.scalars().all())
+
+
+async def list_stale_running(db: AsyncSession, now: datetime) -> list[tuple[Run, Project]]:
+    """Running runs with no batch for longer than their project's abandon_after_minutes."""
+    last_seen = func.coalesce(Run.last_event_at, Run.started_at)
+    cutoff = now - func.make_interval(0, 0, 0, 0, 0, Project.abandon_after_minutes)
+    result = await db.execute(
+        select(Run, Project).join(Project, Project.id == Run.project_id).where(Run.status == "running", last_seen < cutoff)
+    )
+    return [(row[0], row[1]) for row in result.all()]

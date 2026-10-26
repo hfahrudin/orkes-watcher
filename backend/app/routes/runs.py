@@ -9,7 +9,7 @@ from app.models.identity import User
 from app.models.project import Project
 from app.models.run import Run
 from app.repositories import project_repository, run_repository
-from app.schemas.run import ProjectStatsOut, RunOut
+from app.schemas.run import ProjectStatsOut, RunDetailOut, RunOut
 from app.services import query_service
 
 router = APIRouter(tags=["runs"])
@@ -43,7 +43,7 @@ async def get_run_with_access(run_id: uuid.UUID, db: AsyncSession = Depends(get_
     return run
 
 
-@router.get("/runs/{run_id}", response_model=RunOut)
+@router.get("/runs/{run_id}", response_model=RunDetailOut)
 async def get_run(run: Run = Depends(get_run_with_access)):
     return run
 

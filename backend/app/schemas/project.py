@@ -17,6 +17,7 @@ class ProjectOut(CamelModel):
     env: Env
     retention_days: int
     sampling_pct: int
+    abandon_after_minutes: int
     created_at: datetime
 
 
@@ -29,6 +30,7 @@ class ProjectUpdate(CamelModel):
     name: str | None = None
     retention_days: int | None = Field(default=None, ge=1)
     sampling_pct: int | None = Field(default=None, ge=1, le=100)
+    abandon_after_minutes: int | None = Field(default=None, ge=1, le=10080)
 
 
 class MemberOut(CamelModel):

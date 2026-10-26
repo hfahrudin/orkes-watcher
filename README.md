@@ -42,8 +42,9 @@ docker compose exec backend python -m scripts.seed_example_traces
 ```
 
 Populates a `support-triage` project with a few real scenarios — a happy path with a
-parallel branch, a loop that retries and escalates, and a quick simple success — sent
-through the actual ingest endpoint, not written to the database directly.
+parallel branch, a loop that retries and escalates, a run that crashes in a routing gate,
+and a quick simple success — sent through the actual ingest endpoint in the orkes trace
+format, not written to the database directly.
 </details>
 
 <details><summary>Here's the shape of tracing a graph once the SDK ships (proposed API — not published yet)</summary>

@@ -1,86 +1,89 @@
+"""Ingest wire format: orkes trace contract 1.0.
+
+The source of truth is working_context/INTEGRATION_AGREEMENT.md §2. orkes is the master:
+field names, units (seconds) and status strings are orkes's own, snake_case, with no
+camelCase aliasing. The backend only reads a few fields per event (see
+ingest_service._finalize). Everything else, including fields it doesn't know about yet,
+is stored and forwarded unchanged.
+"""
+
 import uuid
-from datetime import datetime
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import ConfigDict, Discriminator, Field, Tag
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
 MAX_BATCH_EVENTS = 5000
+MAX_BODY_BYTES = 5 * 1024 * 1024
 
-from app.schemas.base import CamelModel
-
-_KNOWN_KINDS = ("node", "edge", "run_end")
+_KNOWN_KINDS = ("edge", "run_end")
 
 
 def _event_kind(v: Any) -> str:
-    """Routes to UnknownEvent for any kind the backend doesn't recognize yet, instead of
-    Pydantic's default discriminated-union behavior of rejecting the whole batch."""
+    """Routes any kind the backend doesn't recognize to UnknownEvent, instead of
+    rejecting the whole batch (a new event kind is a contract MINOR bump)."""
     k = v.get("kind") if isinstance(v, dict) else getattr(v, "kind", None)
     return k if k in _KNOWN_KINDS else "unknown"
 
 
-class PassthroughModel(CamelModel):
-    """Fields beyond what's declared here ride along untouched (ingest -> buffer/blob ->
-    query response) instead of being silently dropped. The backend's own logic only reads
-    a handful of fields per event (see ingest_service.py's _finalize) — everything else is
-    opaque as far as the backend is concerned, so the SDK and frontend should be free to
-    add fields to the trace event body without a backend schema change. Contrast with
-    RunEndEvent.status below, which the backend genuinely owns (it drives `runs.status`,
-    a Postgres enum) and stays strictly typed."""
+class PassthroughModel(BaseModel):
+    """Undeclared fields are kept (extra="allow") and forwarded, never dropped."""
 
-    model_config = ConfigDict(alias_generator=CamelModel.model_config["alias_generator"], populate_by_name=True, from_attributes=True, extra="allow")
+    model_config = ConfigDict(extra="allow")
 
 
-class FnCall(PassthroughModel):
+class SdkInfo(PassthroughModel):
     name: str
-    args: dict[str, Any]
-    returns: dict[str, Any] | None = None
-    duration_us: int
+    version: str
 
 
-class NodeEvent(PassthroughModel):
-    kind: Literal["node"] = "node"
+class GraphNode(PassthroughModel):
+    """One entry of the graph's node list (orkes `NodeTrace`)."""
+
     node_id: str
     node_name: str
-    seq: int
-    visit_index: int
-    entered_at: datetime
-    exited_at: datetime | None = None
+    node_description: str | None = None
+    meta: Any = {}
 
 
 class EdgeEvent(PassthroughModel):
+    """orkes `EdgeTrace` plus `kind`. Only the first five fields are read by the backend;
+    the rest are typed loosely because any of them may be a `{"_truncated": true}` marker."""
+
     kind: Literal["edge"] = "edge"
     edge_id: str
+    edge_run_number: int
     from_node: str
-    to_node: str
-    edge_type: str  # not a closed Literal — the backend never branches on it, only forwards it
-    run_seq: int
+    to_node: str | list[str]
+    edge_type: str | None = None  # not a closed set: forwarded, never branched on
     passes_left: int | None = None
-    elapsed_us: int
-    state_snapshot: dict[str, Any] = {}
-    fn_calls: list[FnCall] = []
+    started_at: float | None = None
+    elapsed: float
+    node_elapsed: float | None = None
+    state_snapshot: Any = {}
+    meta: Any = {}
+    function_traces: Any = []
+    llm_traces: Any = []
 
 
-class RunEndEvent(CamelModel):
-    """Sentinel, not a stored trace event — signals ingest to finalize the run.
-    See working_context/sequence-diagrams/trace-ingestion.md."""
+class RunEndEvent(BaseModel):
+    """Finalizes the run. Not stored as a trace event: its fields go onto the `runs` row."""
 
     kind: Literal["run_end"] = "run_end"
-    status: Literal["finished", "failed"]
+    status: Literal["FINISHED", "FAILED"]
+    start_time: float | None = None
+    elapsed_time: float | None = None
     error: str | None = None
+    failed_node: str | None = None
 
 
 class UnknownEvent(PassthroughModel):
-    """A future event kind the backend doesn't recognize yet. Kept opaque and forwarded
-    verbatim (buffer -> blob -> live/query) rather than rejecting the whole ingest batch —
-    it just won't contribute to node_stats/loop_count until the backend adds real support
-    for it. This is what makes a new SDK event kind non-breaking for ingest."""
+    """An event kind added by a newer orkes. Stored and forwarded as-is; not counted in stats."""
 
     kind: str
 
 
 IngestEvent = Annotated[
     Union[
-        Annotated[NodeEvent, Tag("node")],
         Annotated[EdgeEvent, Tag("edge")],
         Annotated[RunEndEvent, Tag("run_end")],
         Annotated[UnknownEvent, Tag("unknown")],
@@ -89,7 +92,20 @@ IngestEvent = Annotated[
 ]
 
 
-class IngestBatch(CamelModel):
+class IngestBatch(BaseModel):
+    contract_version: str = Field(pattern=r"^\d+\.\d+$")
+    sdk: SdkInfo
     run_id: uuid.UUID
     graph_name: str
-    events: list[IngestEvent] = Field(max_length=MAX_BATCH_EVENTS)
+    graph_description: str | None = None
+    nodes: list[GraphNode] | None = None
+    events: list[IngestEvent] = Field(default=[], max_length=MAX_BATCH_EVENTS)
+
+    @model_validator(mode="after")
+    def _run_end_is_last(self) -> "IngestBatch":
+        positions = [i for i, e in enumerate(self.events) if isinstance(e, RunEndEvent)]
+        if len(positions) > 1:
+            raise ValueError("at most one run_end per batch")
+        if positions and positions[0] != len(self.events) - 1:
+            raise ValueError("run_end must be the last event in the batch")
+        return self

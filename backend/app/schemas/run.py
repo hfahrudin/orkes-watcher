@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from app.schemas.base import CamelModel
 
@@ -19,10 +19,19 @@ class RunOut(CamelModel):
     loop_count: int
     elapsed_us: int | None
     error: str | None
+    failed_node: str | None
+    graph_description: str | None
+    contract_version: str | None
+    sdk_version: str | None
+
+
+class RunDetailOut(RunOut):
+    """GET /runs/:id only — adds the graph's node list, which can be large."""
+
+    graph_nodes: list[dict[str, Any]] | None
 
 
 class NodeStatOut(CamelModel):
-    node_id: str
     node_name: str
     run_count: int
     visit_count: int

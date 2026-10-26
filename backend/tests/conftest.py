@@ -1,3 +1,12 @@
+"""Shared test setup. Layout:
+
+- tests/unit/          pure logic, no Postgres/MinIO — fast, run on every change
+- tests/integrations/  the real app in-process against the test Postgres + MinIO
+- tests/load/          opt-in throughput checks: `uv run pytest tests/load -s`
+
+A plain `uv run pytest` runs unit + integrations (see testpaths in pyproject.toml).
+"""
+
 import os
 
 # Must be set before anything imports app.config.settings (module-level singleton) — a
@@ -10,6 +19,8 @@ os.environ.setdefault("ORKES_MINIO_SECRET_KEY", "orkes12345")
 os.environ.setdefault("ORKES_MINIO_BUCKET", "orkes-traces-test")
 os.environ.setdefault("ORKES_BOOTSTRAP_ADMIN_EMAIL", "admin@test.local")
 os.environ.setdefault("ORKES_BOOTSTRAP_ADMIN_PASSWORD", "test-password")
+# Tests call abandon_service.sweep_abandoned() directly with a chosen "now".
+os.environ.setdefault("ORKES_ABANDON_SWEEP_INTERVAL_SECONDS", "0")
 
 import app.config.db as db_module
 from app.config.settings import settings
@@ -40,8 +51,10 @@ from app.repositories import user_repository
 from app.utils.security import hash_password
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def _reset_db():
+@pytest_asyncio.fixture
+async def reset_db():
+    """Fresh schema. Not autouse here, so tests/unit never touches Postgres; the
+    integrations/ and load/ conftests turn it on for every test in their folders."""
     async with db_module.engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -73,7 +86,7 @@ async def make_user(email: str, role: str, password: str = "test-password") -> N
 
 @pytest_asyncio.fixture
 async def login_as(client: AsyncClient):
-    """Depends on `client` only to guarantee `_reset_db`/`lifespan` already ran — each call
+    """Depends on `client` only to guarantee `reset_db`/`lifespan` already ran — each call
     returns its own independent AsyncClient (own cookie jar) against the same in-process
     app, so a test can hold two simultaneous identities (e.g. an admin and a viewer)
     without one login's cookie clobbering the other's."""

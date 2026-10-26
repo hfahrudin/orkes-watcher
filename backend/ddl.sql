@@ -14,13 +14,15 @@
 -- If you intend to keep using Alembic afterward (recommended), stamp its version table so
 -- future `alembic upgrade head` calls don't try to recreate tables that already exist:
 --
---   uv run alembic stamp head   # as of this file, head is 2e1c817b7e6a
+--   uv run alembic stamp head   # as of this file, head is 9d53cdca8361
 
 --
 -- PostgreSQL database dump
 --
 
 
+-- Dumped from database version 16.15
+-- Dumped by pg_dump version 16.15
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -133,7 +135,6 @@ CREATE TABLE public.api_keys (
 
 CREATE TABLE public.node_stats (
     project_id uuid NOT NULL,
-    node_id character varying NOT NULL,
     node_name character varying NOT NULL,
     run_count bigint NOT NULL,
     visit_count bigint NOT NULL,
@@ -162,7 +163,8 @@ CREATE TABLE public.projects (
     env public.project_env NOT NULL,
     retention_days integer NOT NULL,
     sampling_pct smallint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    abandon_after_minutes integer DEFAULT 30 NOT NULL
 );
 
 
@@ -181,7 +183,13 @@ CREATE TABLE public.runs (
     edge_count integer NOT NULL,
     loop_count integer NOT NULL,
     elapsed_us bigint,
-    error text
+    error text,
+    failed_node character varying,
+    graph_description text,
+    graph_nodes jsonb,
+    contract_version character varying,
+    sdk_version character varying,
+    last_event_at timestamp with time zone
 );
 
 
@@ -211,7 +219,9 @@ CREATE TABLE public.users (
     password_hash character varying NOT NULL,
     role public.role NOT NULL,
     status public.user_status NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    activation_token character varying,
+    activation_token_expires_at timestamp with time zone
 );
 
 
@@ -236,7 +246,7 @@ ALTER TABLE ONLY public.api_keys
 --
 
 ALTER TABLE ONLY public.node_stats
-    ADD CONSTRAINT node_stats_pkey PRIMARY KEY (project_id, node_id);
+    ADD CONSTRAINT node_stats_pkey PRIMARY KEY (project_id, node_name);
 
 
 --
@@ -305,6 +315,13 @@ CREATE INDEX ix_runs_project_id ON public.runs USING btree (project_id);
 --
 
 CREATE INDEX ix_sessions_user_id ON public.sessions USING btree (user_id);
+
+
+--
+-- Name: ix_users_activation_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ix_users_activation_token ON public.users USING btree (activation_token);
 
 
 --
