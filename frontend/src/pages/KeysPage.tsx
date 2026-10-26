@@ -23,6 +23,7 @@ export function KeysPage() {
   const [newSecret, setNewSecret] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
   const [verified, setVerified] = useState(false)
+  const [secretCopied, setSecretCopied] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -131,7 +132,7 @@ export function KeysPage() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 9 }}>
           <h5 style={{ margin: 0 }}>Send your first trace</h5>
           <span style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--color-text) 58%, transparent)' }}>
-            Wrap the graph you already build. Every node entry, edge traversal and state snapshot is recorded under the key's project and shows up in the trace log.
+            Add a <span className="mono">WatcherSink</span> to the <span className="mono">OrkesGraph</span> you already build, with an ingest key from above. Every edge traversal, state snapshot, function and LLM call is sent here while the run executes. Needs orkes 0.1.4 or later.
           </span>
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
             <button className="btn btn-secondary">
@@ -145,14 +146,18 @@ export function KeysPage() {
           {verified && <span style={{ color: 'var(--color-success)', fontSize: 12.5 }}>A trace was received for this project.</span>}
         </div>
         <pre className="mono" style={{ flex: 1.2, padding: '14px 16px', borderRadius: 10, background: 'var(--c-code)', boxShadow: 'inset 0 0 0 1px var(--color-divider)', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'color-mix(in srgb, var(--c-text) 80%, transparent)' }}>
-          <span style={{ color: 'var(--color-neutral-600)' }}># pip install orkes-observe{'\n'}</span>
-          <span style={{ color: 'var(--color-accent-300)' }}>from</span> orkes.watcher <span style={{ color: 'var(--color-accent-300)' }}>import</span> tracer{'\n\n'}
-          tracer.init({'\n'}
-          {'    '}api_key=<span style={{ color: 'var(--c-accent-strong)' }}>"ok_live_9f31…"</span>,{'\n'}
-          {'    '}project=<span style={{ color: 'var(--c-accent-strong)' }}>"{project?.name ?? 'my-project'}"</span>,{'\n'}
-          ){'\n\n'}
-          graph = build_graph(){'\n'}
-          run = tracer.run(graph, inputs) <span style={{ color: 'var(--color-neutral-600)' }}># traced</span>
+          <span style={{ color: 'var(--color-neutral-600)' }}># pip install "orkes[watcher]"{'\n'}</span>
+          <span style={{ color: 'var(--color-accent-300)' }}>from</span> orkes <span style={{ color: 'var(--color-accent-300)' }}>import</span> OrkesGraph{'\n'}
+          <span style={{ color: 'var(--color-accent-300)' }}>from</span> orkes.exporters.watcher <span style={{ color: 'var(--color-accent-300)' }}>import</span> WatcherSink{'\n\n'}
+          graph = OrkesGraph({'\n'}
+          {'    '}state=MyState,{'\n'}
+          {'    '}name=<span style={{ color: 'var(--c-accent-strong)' }}>"{project?.name ?? 'my-graph'}"</span>,{'\n'}
+          {'    '}trace_sinks=[WatcherSink({'\n'}
+          {'        '}api_key=<span style={{ color: 'var(--c-accent-strong)' }}>"ok_live_…"</span>,{'\n'}
+          {'        '}base_url=<span style={{ color: 'var(--c-accent-strong)' }}>"{api.API_BASE}"</span>,{'\n'}
+          {'    '})],{'\n'}
+          ){'\n'}
+          <span style={{ color: 'var(--color-neutral-600)' }}># build and run the graph as usual: runs appear here live</span>
         </pre>
       </div>
 
@@ -185,8 +190,14 @@ export function KeysPage() {
           <div className="dialog" onClick={(e) => e.stopPropagation()}>
             <div className="dialog-title">Key created</div>
             <p className="dialog-body">This secret is shown once and never again — copy it now.</p>
-            <pre className="raw-json">{newSecret}</pre>
+            <pre className="raw-json" style={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{newSecret}</pre>
             <div className="dialog-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => navigator.clipboard?.writeText(newSecret).then(() => { setSecretCopied(true); setTimeout(() => setSecretCopied(false), 1500) })}
+              >
+                {secretCopied ? 'Copied' : 'Copy key'}
+              </button>
               <button className="btn btn-primary" onClick={() => setNewSecret(null)}>Done</button>
             </div>
           </div>

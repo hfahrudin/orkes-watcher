@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react
 import * as api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
-import type { Project } from '../lib/types'
+import type { Project, WatcherVersion } from '../lib/types'
 import { BrandLockup } from './Logo'
 import { RoleGate } from './RoleGate'
 
@@ -36,6 +36,7 @@ export function AppShell() {
   const { resolved, setPreference } = useTheme()
   const [projects, setProjects] = useState<Project[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [version, setVersion] = useState<WatcherVersion | null>(null)
 
   function loadProjects() {
     setError(null)
@@ -44,6 +45,7 @@ export function AppShell() {
 
   useEffect(() => {
     loadProjects()
+    api.getVersion().then(setVersion).catch(() => setVersion(null))
   }, [])
 
   const current = projects.find((p) => p.id === projectId)
@@ -104,7 +106,9 @@ export function AppShell() {
             <i className={`ph ${resolved === 'dark' ? 'ph-sun' : 'ph-moon'}`} />
             {resolved === 'dark' ? 'Light mode' : 'Dark mode'}
           </button>
-          <div className="sdk-status">SDK 0.1.3 · ingest healthy</div>
+          <div className="sdk-status" title="The orkes trace contract versions this watcher accepts">
+            {version ? `Watcher ${version.watcher_version} · contract ${version.contract.latest}` : 'Watcher version unavailable'}
+          </div>
           <button className="sideitem" style={{ color: 'var(--c-muted)', fontSize: 11.5 }} onClick={async () => { await logout(); navigate('/login') }}>
             <i className="ph ph-sign-out" style={{ fontSize: 13 }} />
             Sign out

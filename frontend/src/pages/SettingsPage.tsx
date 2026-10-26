@@ -9,6 +9,7 @@ import type { Project } from '../lib/types'
 
 const RETENTION_OPTIONS = [7, 30, 90]
 const SAMPLING_OPTIONS = [100, 50, 10]
+const ABANDON_OPTIONS = [15, 30, 120]
 
 export function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -37,7 +38,7 @@ export function SettingsPage() {
   if (loadError) return <ErrorState message={loadError} onRetry={load} />
   if (!form) return <p className="text-muted">Loading…</p>
 
-  async function save(patch: Partial<Pick<Project, 'name' | 'retentionDays' | 'samplingPct'>>) {
+  async function save(patch: Partial<Pick<Project, 'name' | 'retentionDays' | 'samplingPct' | 'abandonAfterMinutes'>>) {
     setSaveError(null)
     try {
       const updated = await api.updateProject(form!.id, patch)
@@ -59,7 +60,8 @@ export function SettingsPage() {
     }
   }
 
-  const endpoint = `https://ingest.orkes.dev/v1/${form.name}`
+  // What an orkes WatcherSink is given as base_url; it POSTs to `${base_url}/ingest/events`.
+  const endpoint = api.API_BASE
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -136,8 +138,28 @@ export function SettingsPage() {
 
         <div className="srow">
           <div>
+            <span style={{ fontSize: 13.5 }}>Abandoned runs</span>
+            <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>A running run that sends nothing for this long is marked failed.</span>
+          </div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 7 }}>
+            <div className="seg">
+              {ABANDON_OPTIONS.map((m) => (
+                <label className="seg-opt" key={m}>
+                  <input type="radio" name="settings-abandon" checked={form.abandonAfterMinutes === m} onChange={() => save({ abandonAfterMinutes: m })} />
+                  {m < 60 ? `${m} min` : `${m / 60} h`}
+                </label>
+              ))}
+            </div>
+            <span style={{ fontSize: 11.5, color: 'var(--c-muted)' }}>
+              {ABANDON_OPTIONS.includes(form.abandonAfterMinutes) ? 'Catches orkes processes that crashed or were killed mid-run.' : `Currently ${form.abandonAfterMinutes} minutes.`}
+            </span>
+          </div>
+        </div>
+
+        <div className="srow">
+          <div>
             <span style={{ fontSize: 13.5 }}>Ingest endpoint</span>
-            <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>Where the SDK posts traces for this project.</span>
+            <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>The <span className="mono">base_url</span> to give orkes's <span className="mono">WatcherSink</span>, with an ingest key from API keys.</span>
           </div>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', borderRadius: 7, background: 'var(--c-code)', boxShadow: 'inset 0 0 0 1px var(--color-divider)' }}>
             <span className="mono" style={{ fontSize: 11.5, color: 'var(--c-text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{endpoint}</span>

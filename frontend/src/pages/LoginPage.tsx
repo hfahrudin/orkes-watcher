@@ -5,14 +5,14 @@ import { BrandLockup } from '../components/Logo'
 
 const STEPS = [
   { title: 'Create a project', body: 'One ingest namespace per app or environment.' },
-  { title: 'Point the SDK at it', body: 'Two lines. Your graph code stays as it is.' },
+  { title: 'Add a WatcherSink to your orkes graph', body: 'One argument. Your nodes and edges stay as they are.' },
   { title: 'Inspect every step', body: 'Nodes, edge types, loop passes and state snapshots per traversal.' },
 ]
 
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('fahrudinhasby12@gmail.com')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -66,9 +66,6 @@ export function LoginPage() {
             <span>Accounts are created by an admin. Ask yours for an activation link.</span>
           </div>
 
-          <div className="auth-alt" style={{ fontSize: 11.5 }}>
-            Demo: fahrudinhasby12@gmail.com (admin) · dev@orkes.dev (developer) · viewer@orkes.dev (viewer) — any password
-          </div>
         </form>
       </div>
 
@@ -107,10 +104,12 @@ export function LoginPage() {
             color: 'color-mix(in srgb, var(--c-text) 80%, transparent)',
           }}
         >
-          <span style={{ color: 'var(--c-accent-strong)' }}>from</span> orkes.watcher{' '}
-          <span style={{ color: 'var(--c-accent-strong)' }}>import</span> tracer{'\n\n'}
-          tracer.init(api_key=<span style={{ color: 'var(--c-c3)' }}>"ok_live_…"</span>){'\n'}
-          run = tracer.run(graph, inputs)
+          <span style={{ color: 'var(--c-accent-strong)' }}>from</span> orkes.exporters.watcher{' '}
+          <span style={{ color: 'var(--c-accent-strong)' }}>import</span> WatcherSink{'\n\n'}
+          graph = OrkesGraph({'\n'}
+          {'    '}state=MyState, name=<span style={{ color: 'var(--c-c3)' }}>"support-triage"</span>,{'\n'}
+          {'    '}trace_sinks=[WatcherSink(api_key=<span style={{ color: 'var(--c-c3)' }}>"ok_live_…"</span>, base_url=…)],{'\n'}
+          )
         </pre>
       </div>
     </div>

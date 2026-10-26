@@ -14,6 +14,12 @@ from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_val
 
 MAX_BATCH_EVENTS = 5000
 MAX_BODY_BYTES = 5 * 1024 * 1024
+# Deeper JSON can't be written back out (json.dumps recursion), so it's rejected on the way in.
+MAX_JSON_DEPTH = 64
+# Unix seconds. Anything outside 1970..2100 is a bug in the sender, not a real time.
+MAX_TIMESTAMP = 4_102_444_800.0
+# Seconds. A run or step longer than ~1 year is a bug in the sender.
+MAX_DURATION = 31_536_000.0
 
 _KNOWN_KINDS = ("edge", "run_end")
 
@@ -56,9 +62,9 @@ class EdgeEvent(PassthroughModel):
     to_node: str | list[str]
     edge_type: str | None = None  # not a closed set: forwarded, never branched on
     passes_left: int | None = None
-    started_at: float | None = None
-    elapsed: float
-    node_elapsed: float | None = None
+    started_at: float | None = Field(default=None, ge=0, le=MAX_TIMESTAMP)
+    elapsed: float = Field(ge=0, le=MAX_DURATION)
+    node_elapsed: float | None = Field(default=None, ge=0, le=MAX_DURATION)
     state_snapshot: Any = {}
     meta: Any = {}
     function_traces: Any = []
@@ -70,8 +76,8 @@ class RunEndEvent(BaseModel):
 
     kind: Literal["run_end"] = "run_end"
     status: Literal["FINISHED", "FAILED"]
-    start_time: float | None = None
-    elapsed_time: float | None = None
+    start_time: float | None = Field(default=None, ge=0, le=MAX_TIMESTAMP)
+    elapsed_time: float | None = Field(default=None, ge=0, le=MAX_DURATION)
     error: str | None = None
     failed_node: str | None = None
 

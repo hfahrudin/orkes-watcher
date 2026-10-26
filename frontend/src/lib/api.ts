@@ -1,4 +1,4 @@
-import type { ApiKey, Member, NodeStat, Project, Run, Session, TraceEvent, User } from './types'
+import type { ApiKey, Member, NodeStat, Project, Run, Session, TraceEvent, User, WatcherVersion } from './types'
 
 declare global {
   interface Window {
@@ -9,7 +9,8 @@ declare global {
 
 // Runtime-injected value takes priority (the real path, in Docker); import.meta.env is a
 // build-time Vite fallback for plain `npm run dev` without the entrypoint script at all.
-const API_BASE = window.__ORKES_CONFIG__?.API_URL || import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Also the `base_url` an orkes WatcherSink sends traces to (shown on the Settings page).
+export const API_BASE = window.__ORKES_CONFIG__?.API_URL || import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const WS_BASE = API_BASE.replace(/^http/, 'ws')
 
 export class ApiError extends Error {
@@ -96,7 +97,7 @@ export async function createProject(input: Pick<Project, 'name' | 'env'>): Promi
   return request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) })
 }
 
-export async function updateProject(id: string, patch: Partial<Pick<Project, 'name' | 'retentionDays' | 'samplingPct'>>): Promise<Project> {
+export async function updateProject(id: string, patch: Partial<Pick<Project, 'name' | 'retentionDays' | 'samplingPct' | 'abandonAfterMinutes'>>): Promise<Project> {
   return request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
 }
 
@@ -127,8 +128,14 @@ export async function getProjectStats(projectId: string): Promise<ProjectStats> 
   return request<ProjectStats>(`/projects/${projectId}/stats`)
 }
 
+/** Trace events exactly as orkes sent them (snake_case), ordered by edge_run_number. */
 export async function getRunEvents(runId: string): Promise<TraceEvent[]> {
   return request<TraceEvent[]>(`/runs/${runId}/events`)
+}
+
+/** No auth needed. Same endpoint the orkes sink checks before sending. */
+export async function getVersion(): Promise<WatcherVersion> {
+  return request<WatcherVersion>('/version', { suppressAuthRedirect: true })
 }
 
 export async function listApiKeys(projectId: string): Promise<ApiKey[]> {
@@ -181,21 +188,42 @@ export async function revokeOtherSessions(): Promise<void> {
 }
 
 // --- live gateway ---------------------------------------------------------
-// Real `WS /runs/:id/live` per TRACES_CONTRACT.md / API.md — replaces the mock's scripted
-// interval emitter. Server messages are `{type:'event', data: TraceEvent}` or
-// `{type:'done', status}`; see backend/app/routes/live.py.
+// `WS /runs/:id/live` (backend/app/routes/live.py). Server messages are
+// `{type:'event', data: TraceEvent}` or `{type:'done', status}`.
+//
+// The socket only carries events that arrive *after* it opens; it doesn't replay earlier
+// ones. So a viewer of a running run waits for `onOpen`, then fetches GET /runs/:id/events,
+// and merges both by edge_run_number (agreement F4). Once the socket is open the server
+// has already registered it, so nothing can slip between the two.
 
-type LiveHandler = (event: TraceEvent) => void
-type DoneHandler = (finalStatus: 'finished' | 'failed') => void
+interface LiveHandlers {
+  onEvent: (event: TraceEvent) => void
+  onDone: (finalStatus: 'finished' | 'failed') => void
+  onOpen?: () => void
+  /** Closed without a `done` message: the run had already ended, or the connection dropped. */
+  onClose?: () => void
+}
 
-export function subscribeToLiveRun(runId: string, onEvent: LiveHandler, onDone: DoneHandler): () => void {
+export function subscribeToLiveRun(runId: string, handlers: LiveHandlers): () => void {
   const ws = new WebSocket(`${WS_BASE}/runs/${runId}/live`)
+  let done = false
+  let closedByUs = false
 
+  ws.onopen = () => handlers.onOpen?.()
   ws.onmessage = (msg) => {
     const parsed = JSON.parse(msg.data)
-    if (parsed.type === 'event') onEvent(parsed.data as TraceEvent)
-    else if (parsed.type === 'done') onDone(parsed.status)
+    if (parsed.type === 'event') handlers.onEvent(parsed.data as TraceEvent)
+    else if (parsed.type === 'done') {
+      done = true
+      handlers.onDone(parsed.status)
+    }
+  }
+  ws.onclose = () => {
+    if (!done && !closedByUs) handlers.onClose?.()
   }
 
-  return () => ws.close()
+  return () => {
+    closedByUs = true
+    ws.close()
+  }
 }

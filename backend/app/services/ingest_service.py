@@ -21,18 +21,16 @@ async def process_batch(db: AsyncSession, key: ApiKey, batch: IngestBatch) -> No
     run_id_str = str(batch.run_id)
     now = datetime.now(timezone.utc)
 
-    run = await run_repository.get(db, batch.run_id)
-    if run is None:
-        run = await run_repository.create(
-            db,
-            run_id=batch.run_id,
-            project_id=key.project_id,
-            graph_name=batch.graph_name,
-            started_at=now,  # replaced by orkes's own start_time when run_end arrives
-            contract_version=batch.contract_version,
-            sdk_version=batch.sdk.version,
-        )
-    elif run.project_id != key.project_id:
+    run = await run_repository.lock_or_create(
+        db,
+        run_id=batch.run_id,
+        project_id=key.project_id,
+        graph_name=batch.graph_name,
+        started_at=now,  # replaced by orkes's own start_time when run_end arrives
+        contract_version=batch.contract_version,
+        sdk_version=batch.sdk.version,
+    )
+    if run.project_id != key.project_id:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Run {batch.run_id} belongs to a different project")
     elif run.status != "running":
         # Exactly one run_end per run, nothing after it (contract §2.2). Without this, a
@@ -50,13 +48,18 @@ async def process_batch(db: AsyncSession, key: ApiKey, batch: IngestBatch) -> No
     project = await project_repository.get(db, key.project_id)
     assert project is not None  # the API key's project_id is a live FK, this can't be missing
 
+    finalized = False
     for event in batch.events:
         if isinstance(event, RunEndEvent):
             await _finalize(db, project, run, event)
+            finalized = True
         else:
             await live_registry.publish(run_id_str, event.model_dump(mode="json"))
 
     await db.commit()
+    if finalized:
+        # Only after the commit: viewers re-fetch the run as soon as they see `done`.
+        await end_live_stream(run)
 
 
 async def _finalize(db: AsyncSession, project: Project, run: Run, event: RunEndEvent) -> None:
@@ -97,8 +100,9 @@ async def close_run(
     error: str | None,
     failed_node: str | None,
 ) -> None:
-    """Computes the run's stats from its buffered events, stores them, flushes the trace
-    blob, and ends the live stream. Shared by a normal run_end and the abandoned-run sweep."""
+    """Computes the run's stats from its buffered events, stores them and flushes the trace
+    blob. Shared by a normal run_end and the abandoned-run sweep. The caller commits, then
+    calls end_live_stream() — never before the commit (see end_live_stream)."""
     run_id_str = str(run.id)
     buffer = order_events(live_registry.buffer(run_id_str))
     stats = compute_run_stats(buffer)
@@ -127,6 +131,12 @@ async def close_run(
         ndjson = "\n".join(json.dumps(e) for e in buffer).encode()
         await run_in_threadpool(trace_blob_repository.put_trace, project.id, run.id, ndjson)
 
-    await live_registry.publish_done(run_id_str, status)
+
+async def end_live_stream(run: Run) -> None:
+    """Sends viewers `done` and drops the run's in-memory buffer. Must run after the
+    run's final state is committed: viewers re-fetch the run and its events on `done`, and
+    before the commit they'd still see it `running`, with its buffer already gone."""
+    run_id_str = str(run.id)
+    await live_registry.publish_done(run_id_str, run.status)
     live_registry.discard(run_id_str)
 

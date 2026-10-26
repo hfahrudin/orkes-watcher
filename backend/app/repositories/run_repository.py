@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
@@ -31,6 +32,35 @@ async def create(
     db.add(run)
     await db.flush()
     return run
+
+
+async def lock_or_create(
+    db: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    project_id: uuid.UUID,
+    graph_name: str,
+    started_at: datetime,
+    contract_version: str | None,
+    sdk_version: str | None,
+) -> Run:
+    """Returns the run, creating it if needed, row-locked until the transaction ends.
+
+    Safe when several batches for a brand-new run arrive at once: the insert does nothing if
+    another request created the row first (waiting for that request to commit), and the
+    lock makes batches for one run take turns, so none can slip in while run_end is being
+    finalized."""
+    await db.execute(
+        insert(Run)
+        .values(
+            id=run_id, project_id=project_id, graph_name=graph_name, status="running", started_at=started_at,
+            last_event_at=started_at, contract_version=contract_version, sdk_version=sdk_version,
+            node_count=0, edge_count=0, loop_count=0,
+        )
+        .on_conflict_do_nothing(index_elements=[Run.id])
+    )
+    stmt = select(Run).where(Run.id == run_id).with_for_update().execution_options(populate_existing=True)
+    return (await db.execute(stmt)).scalar_one()
 
 
 async def get(db: AsyncSession, run_id: uuid.UUID) -> Run | None:
@@ -123,6 +153,10 @@ async def list_stale_running(db: AsyncSession, now: datetime) -> list[tuple[Run,
     last_seen = func.coalesce(Run.last_event_at, Run.started_at)
     cutoff = now - func.make_interval(0, 0, 0, 0, 0, Project.abandon_after_minutes)
     result = await db.execute(
-        select(Run, Project).join(Project, Project.id == Run.project_id).where(Run.status == "running", last_seen < cutoff)
+        select(Run, Project)
+        .join(Project, Project.id == Run.project_id)
+        .where(Run.status == "running", last_seen < cutoff)
+        # A run that's locked is mid-batch right now, so it isn't abandoned: skip it.
+        .with_for_update(of=Run, skip_locked=True)
     )
     return [(row[0], row[1]) for row in result.all()]

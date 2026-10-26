@@ -10,7 +10,7 @@ from app.config.db import get_db
 from app.config.deps import require_ingest_key
 from app.config.version import SUPPORTED_CONTRACT_MAJORS, contract_major
 from app.models.project import ApiKey
-from app.schemas.trace_event import MAX_BODY_BYTES, IngestBatch
+from app.schemas.trace_event import MAX_BODY_BYTES, MAX_JSON_DEPTH, IngestBatch
 from app.services import ingest_service
 
 router = APIRouter(tags=["ingest"])
@@ -28,6 +28,34 @@ async def _read_limited_body(request: Request) -> bytes:
     return bytes(body)
 
 
+class _NonFiniteNumber(ValueError):
+    pass
+
+
+def _reject_non_finite(token: str):
+    # json.loads accepts NaN / Infinity / -Infinity, which aren't JSON: they'd be stored and
+    # then break every later read of the run (JSON responses can't contain them).
+    raise _NonFiniteNumber(token)
+
+
+def _too_deep(value, limit: int = MAX_JSON_DEPTH) -> bool:
+    """Iterative depth check (a recursive one would itself hit the recursion limit)."""
+    stack = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > limit:
+            return True
+        if isinstance(node, dict):
+            stack.extend((v, depth + 1) for v in node.values())
+        elif isinstance(node, list):
+            stack.extend((v, depth + 1) for v in node)
+    return False
+
+
+def _invalid(msg: str, kind: str) -> RequestValidationError:
+    return RequestValidationError([{"type": kind, "loc": ("body",), "msg": msg, "input": None}])
+
+
 @router.post("/ingest/events", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_events(request: Request, key: ApiKey = Depends(require_ingest_key), db: AsyncSession = Depends(get_db)):
     """Contract: working_context/INTEGRATION_AGREEMENT.md §2. The body is parsed by hand so
@@ -35,9 +63,13 @@ async def ingest_events(request: Request, key: ApiKey = Depends(require_ingest_k
     a payload from an unsupported contract major gets a clear 400, not a confusing 422."""
     raw = await _read_limited_body(request)
     try:
-        payload = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        raise RequestValidationError([{"type": "json_invalid", "loc": ("body",), "msg": "Body is not valid JSON", "input": None}])
+        payload = json.loads(raw, parse_constant=_reject_non_finite)
+    except _NonFiniteNumber as e:
+        raise _invalid(f"{e} is not a valid JSON number; send null or a finite number", "number_not_finite")
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+        raise _invalid("Body is not valid JSON", "json_invalid")
+    if _too_deep(payload):
+        raise _invalid(f"JSON nested more than {MAX_JSON_DEPTH} levels deep", "json_too_deep")
 
     version = payload.get("contract_version") if isinstance(payload, dict) else None
     major = contract_major(version) if isinstance(version, str) else None

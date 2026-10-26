@@ -60,8 +60,12 @@ async def update_member_role(
     db: AsyncSession = Depends(get_db),
 ):
     target = await user_repository.get_by_id(db, user_id)
-    if not target:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if not target or not await member_repository.get_membership(db, project.id, user_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not a member of this project")
+    # Roles are global (DATABASE.md), so demoting the only admin would leave nobody able to
+    # manage the install.
+    if target.role == "admin" and body.role != "admin" and target.status == "active" and await user_repository.count_active_admins(db) <= 1:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Can't change the role of the last admin. Make someone else an admin first.")
     updated = await member_service.update_member_role(db, target, body.role)
     await db.commit()
     return _to_member_out(project.id, updated)

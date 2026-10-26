@@ -135,7 +135,7 @@ export function DashboardPage() {
                 const avg = n.totalDurationUs / n.visitCount
                 const widthPct = (avg / (stats.slowestNodes[0].totalDurationUs / stats.slowestNodes[0].visitCount)) * 100
                 return (
-                  <div key={n.nodeId} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div key={n.nodeName} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5 }}>
                       <span className="mono" style={{ fontSize: 12 }}>{n.nodeName}</span>
                       <span className="mono" style={{ marginLeft: 'auto', fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 55%, transparent)' }}>{formatDuration(avg)}</span>

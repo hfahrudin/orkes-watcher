@@ -16,18 +16,37 @@ function initials(name: string) {
   return name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 }
 
+// Per-browser preference for the role preselected in Create user. Storage can throw or be
+// empty (private windows, blocked site data), so it falls back to developer.
+const DEFAULT_ROLE_KEY = 'orkes-default-invite-role'
+function loadDefaultRole(): Role {
+  try {
+    const v = localStorage.getItem(DEFAULT_ROLE_KEY)
+    return v === 'viewer' || v === 'developer' ? v : 'developer'
+  } catch {
+    return 'developer'
+  }
+}
+function saveDefaultRole(role: Role) {
+  try {
+    localStorage.setItem(DEFAULT_ROLE_KEY, role)
+  } catch {
+    // not saved; the choice still applies until the page reloads
+  }
+}
+
 function activationLink(token: string) {
   return `${window.location.origin}/activate?token=${token}`
 }
 
 export function MembersPage() {
   const { projectId } = useParams<{ projectId: string }>()
-  const { hasRole } = useAuth()
+  const { hasRole, user } = useAuth()
   const [members, setMembers] = useState<Member[]>([])
   const [inviting, setInviting] = useState(false)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('developer')
-  const [defaultRole, setDefaultRole] = useState<Role>('developer')
+  const [defaultRole, setDefaultRoleState] = useState<Role>(loadDefaultRole)
   const [activationDialog, setActivationDialog] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -84,6 +103,16 @@ export function MembersPage() {
     }
   }
 
+  function setDefaultRole(r: Role) {
+    setDefaultRoleState(r)
+    saveDefaultRole(r)
+  }
+
+  function openInvite() {
+    setRole(defaultRole)
+    setInviting(true)
+  }
+
   function copyLink(link: string) {
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true)
@@ -103,7 +132,7 @@ export function MembersPage() {
           </span>
         </div>
         <RoleGate roles={['admin']}>
-          <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setInviting(true)}>
+          <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={openInvite}>
             <i className="ph ph-user-plus" />
             Create user
           </button>
@@ -165,7 +194,14 @@ export function MembersPage() {
                 </td>
                 <td>
                   {hasRole('admin') ? (
-                    <select className="input" style={{ minHeight: 30, width: 130 }} value={m.role} onChange={(e) => changeRole(m.userId, e.target.value as Role)}>
+                    <select
+                      className="input"
+                      style={{ minHeight: 30, width: 130 }}
+                      value={m.role}
+                      disabled={m.userId === user?.id}
+                      title={m.userId === user?.id ? "You can't change your own role. Ask another admin." : undefined}
+                      onChange={(e) => changeRole(m.userId, e.target.value as Role)}
+                    >
                       <option value="admin">Admin</option>
                       <option value="developer">Developer</option>
                       <option value="viewer">Viewer</option>

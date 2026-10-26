@@ -25,6 +25,8 @@ async def sweep_abandoned(now: datetime | None = None) -> int:
         for run, project in stale:
             await ingest_service.abandon_run(db, project, run)
         await db.commit()
+        for run, _ in stale:
+            await ingest_service.end_live_stream(run)
     return len(stale)
 
 

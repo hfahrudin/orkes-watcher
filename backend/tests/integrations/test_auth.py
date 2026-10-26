@@ -93,3 +93,16 @@ async def test_activate_account_twice_fails(admin_client: AsyncClient, client: A
 
     r = await client.post("/auth/activate", json={"token": token, "password": "password456"})
     assert r.status_code == 400
+
+
+async def test_change_password_signs_out_other_sessions(admin_client: AsyncClient, client: AsyncClient):
+    """QA regression: other sessions stayed valid after a password change."""
+    from httpx import ASGITransport
+    from app.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as other:
+        assert (await other.post("/auth/login", json={"email": "admin@test.local", "password": "test-password"})).status_code == 200
+        r = await admin_client.post("/me/change-password", json={"currentPassword": "test-password", "newPassword": "newpassword123"})
+        assert r.status_code == 200
+        assert (await other.get("/me")).status_code == 401
+    assert (await admin_client.get("/me")).status_code == 200  # the session that changed it stays

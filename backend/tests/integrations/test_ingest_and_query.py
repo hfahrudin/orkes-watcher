@@ -418,3 +418,122 @@ async def test_run_not_visible_to_non_member(admin_client: AsyncClient, login_as
     outsider = await login_as("outsider@test.local", "developer")
     assert (await outsider.get(f"/runs/{run_id}")).status_code == 403
     assert (await outsider.get(f"/projects/{project_id}/stats")).status_code == 403
+
+
+# --- ordering of the live `done` message ----------------------------------------------
+
+
+async def _status_seen_by_viewer_on_done(monkeypatch) -> list[str]:
+    """Records the run status a fresh DB session sees at the moment `done` is sent —
+    what a viewer re-fetching the run on `done` would get."""
+    import app.config.db as db_module
+    from app.repositories import run_repository
+    from app.services.live_service import live_registry
+
+    seen: list[str] = []
+    original = live_registry.publish_done
+
+    async def recording_publish_done(run_id: str, status: str) -> None:
+        async with db_module.SessionLocal() as fresh:
+            seen.append((await run_repository.get(fresh, uuid.UUID(run_id))).status)
+        await original(run_id, status)
+
+    monkeypatch.setattr(live_registry, "publish_done", recording_publish_done)
+    return seen
+
+
+async def test_done_is_sent_only_after_final_status_is_committed(admin_client: AsyncClient, monkeypatch):
+    """Regression test: `done` used to go out before the commit, so a viewer re-fetching
+    the run on `done` could still see it `running`."""
+    seen = await _status_seen_by_viewer_on_done(monkeypatch)
+    _, secret = await project_and_ingest_secret(admin_client)
+    await ingest(admin_client, secret, batch(str(uuid.uuid4()), happy_path_events()))
+    assert seen == ["finished"]
+
+
+async def test_abandoned_done_is_sent_only_after_commit(admin_client: AsyncClient, monkeypatch):
+    seen = await _status_seen_by_viewer_on_done(monkeypatch)
+    _, secret = await project_and_ingest_secret(admin_client)
+    await ingest(admin_client, secret, batch(str(uuid.uuid4()), [edge("e", 1, "START", "a")]))
+    await abandon_service.sweep_abandoned(datetime.now(timezone.utc) + timedelta(minutes=31))
+    assert seen == ["failed"]
+
+
+# --- QA regressions: values that used to crash ingest or poison a run -----------------
+
+
+async def _raw(admin_client: AsyncClient, secret: str, events_json: str):
+    run_id = str(uuid.uuid4())
+    body = f'{{"contract_version":"1.0","sdk":{{"name":"orkes","version":"t"}},"run_id":"{run_id}","graph_name":"g","events":{events_json}}}'
+    r = await admin_client.post("/ingest/events", headers={**auth(secret), "Content-Type": "application/json"}, content=body)
+    return r, run_id
+
+
+EDGE = '{{"kind":"edge","edge_id":"e","edge_run_number":1,"from_node":"a","to_node":"b","elapsed":{e},"node_elapsed":{n},"state_snapshot":{s}}}'
+END = '{{"kind":"run_end","status":"FINISHED","start_time":{t},"elapsed_time":{d}}}'
+
+
+async def test_non_finite_numbers_anywhere_are_422(admin_client: AsyncClient):
+    """NaN used to 500 in stats; Infinity was accepted and then every read of the run 500'd."""
+    _, secret = await project_and_ingest_secret(admin_client)
+    for events in (
+        f"[{EDGE.format(e=1, n='NaN', s='{}')}]",
+        f"[{EDGE.format(e='Infinity', n=1, s='{}')}]",
+        f"[{EDGE.format(e=1, n=1, s='{\"deep\":{\"x\":-Infinity}}')}]",  # inside opaque state too
+        f"[{END.format(t='NaN', d=1)}]",
+    ):
+        r, run_id = await _raw(admin_client, secret, events)
+        assert r.status_code == 422, (events, r.text)
+        assert (await admin_client.get(f"/runs/{run_id}")).status_code == 404  # nothing stored
+
+
+async def test_out_of_range_times_are_422(admin_client: AsyncClient):
+    _, secret = await project_and_ingest_secret(admin_client)
+    for events in (
+        f"[{END.format(t='1e20', d=1)}]",  # used to 500: timestamp out of range
+        f"[{END.format(t=1.7e9, d=-5)}]",
+        f"[{EDGE.format(e=-1, n=1, s='{}')}]",
+    ):
+        r, _ = await _raw(admin_client, secret, events)
+        assert r.status_code == 422, (events, r.text)
+
+
+async def test_too_deeply_nested_json_is_422_but_normal_nesting_is_fine(admin_client: AsyncClient):
+    _, secret = await project_and_ingest_secret(admin_client)
+    r, _ = await _raw(admin_client, secret, f"[{EDGE.format(e=1, n=1, s='[' * 5000 + ']' * 5000)}]")
+    assert r.status_code == 422  # used to 500 when the trace was written out
+    r, run_id = await _raw(admin_client, secret, f"[{EDGE.format(e=1, n=1, s='{\"a\":' * 40 + '1' + '}' * 40)},{END.format(t=1.7e9, d=1)}]")
+    assert r.status_code == 202
+    assert (await admin_client.get(f"/runs/{run_id}/events")).status_code == 200
+
+
+async def test_concurrent_first_batches_for_one_run_all_land(admin_client: AsyncClient):
+    """Several sink flushes in flight for a brand-new run used to race on creating the row (500).
+    Calls the ingest service directly with one DB session per batch, so the batches really
+    overlap (over HTTP in-process, the synchronous key check makes them take turns)."""
+    import asyncio
+
+    import app.config.db as db_module
+    from app.repositories import api_key_repository
+    from app.schemas.trace_event import IngestBatch
+    from app.services import ingest_service
+    from app.utils.security import split_api_key
+
+    _, secret = await project_and_ingest_secret(admin_client)
+    async with db_module.SessionLocal() as db:
+        key = await api_key_repository.get_by_prefix(db, split_api_key(secret)[0])
+    run_id = str(uuid.uuid4())
+
+    async def send(i: int) -> None:
+        async with db_module.SessionLocal() as db:
+            await ingest_service.process_batch(db, key, IngestBatch.model_validate(batch(run_id, [edge(f"e{i}", i + 1, "a", "b")])))
+
+    await asyncio.gather(*(send(i) for i in range(15)))
+    assert len((await admin_client.get(f"/runs/{run_id}/events")).json()) == 15
+
+
+async def test_api_key_last_used_is_recorded(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    await ingest(admin_client, secret, batch(str(uuid.uuid4()), []))
+    keys = (await admin_client.get(f"/projects/{project_id}/keys")).json()
+    assert any(k["lastUsedAt"] is not None for k in keys)

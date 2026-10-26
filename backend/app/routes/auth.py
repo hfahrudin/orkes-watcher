@@ -58,10 +58,17 @@ async def update_me(body: UpdateMeRequest, user: User = Depends(get_current_user
 
 
 @router.post("/me/change-password")
-async def change_password(body: ChangePasswordRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    current: SessionModel = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+):
     try:
         await auth_service.change_password(db, user, current_password=body.current_password, new_password=body.new_password)
     except auth_service.InvalidCredentials:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+    # A password change is often a response to a leaked password: end every other session.
+    await auth_service.sign_out_others(db, user_id=user.id, keep_token=current.id)
     await db.commit()
     return {"ok": True}

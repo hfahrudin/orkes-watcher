@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Cookie, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,6 +78,10 @@ async def get_api_key(request: Request, db: AsyncSession = Depends(get_db)) -> A
     key = await api_key_repository.get_by_prefix(db, prefix)
     if not key or key.scope == "revoked" or not verify_api_key_secret(secret, key.secret_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or revoked API key")
+    # Shown as "Last used" on the API keys page. Written at most once a minute so a busy
+    # sink doesn't add a row update to every batch; saved when the request commits.
+    if key.last_used_at is None or key.last_used_at < datetime.now(timezone.utc) - timedelta(minutes=1):
+        await api_key_repository.touch_last_used(db, key)
     return key
 
 
