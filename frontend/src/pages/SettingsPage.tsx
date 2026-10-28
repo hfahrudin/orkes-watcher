@@ -7,7 +7,8 @@ import { RoleGate } from '../components/RoleGate'
 import { ErrorState } from '../components/ErrorState'
 import type { Project } from '../lib/types'
 
-const RETENTION_OPTIONS = [7, 30, 90]
+// null = never delete
+const RETENTION_OPTIONS: (number | null)[] = [7, 30, 90, null]
 const SAMPLING_OPTIONS = [100, 50, 10]
 const ABANDON_OPTIONS = [15, 30, 120]
 
@@ -28,7 +29,7 @@ export function SettingsPage() {
     if (!projectId) return
     setLoadError(null)
     api.getProject(projectId).then((p) => setForm(p ?? null)).catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load project'))
-    api.listRuns(projectId).then((runs) => setRunCount(runs.length)).catch(() => {})
+    api.countRuns(projectId).then(setRunCount).catch(() => {})
   }
 
   useEffect(() => {
@@ -106,13 +107,13 @@ export function SettingsPage() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 7 }}>
             <div className="seg">
               {RETENTION_OPTIONS.map((d) => (
-                <label className="seg-opt" key={d}>
+                <label className="seg-opt" key={d ?? 'never'}>
                   <input type="radio" name="settings-retention" checked={form.retentionDays === d} onChange={() => save({ retentionDays: d })} />
-                  {d} days
+                  {d === null ? 'Never' : `${d} days`}
                 </label>
               ))}
             </div>
-            <span style={{ fontSize: 11.5, color: 'var(--c-muted)' }}>Currently storing {runCount} traces</span>
+            <span style={{ fontSize: 11.5, color: 'var(--c-muted)' }}>Currently storing {runCount} traces{form.retentionDays === null ? ' · kept until the project is deleted' : ''}</span>
           </div>
         </div>
 

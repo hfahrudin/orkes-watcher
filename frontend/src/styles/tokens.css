@@ -10,7 +10,17 @@ html[data-theme='dark'] {
   --c-bg: #14181e; --c-sidebar: #10141a; --c-panel: #1a1f27; --c-raised: #222832;
   --c-code: #0f1216; --c-canvas: #171c23; --c-border: #37414d;
   --c-text: #ced6dd; --c-text2: #9aa5b1; --c-muted: #6b7784;
+  /* Secondary text levels. Dark keeps the faded-text look; light uses solid greys, because
+     faded dark text on a near-white background is too pale to read. */
+  --c-text-soft: color-mix(in srgb, var(--c-text) 75%, transparent);
+  --c-text-dim: color-mix(in srgb, var(--c-text) 55%, transparent);
+  --c-text-faint: color-mix(in srgb, var(--c-text) 45%, transparent);
   --c-accent: #8f79e8; --c-accent-strong: #cfc4ff;
+  /* Two-series line charts (p50 / p95). Validated with the dataviz palette checks against
+     the dark card surface: lightness band, chroma, CVD separation, contrast. */
+  --chart-1: #8f79e8; --chart-2: #1aa293;
+  /* Error categories (Top errors tags). Text on a 15% tint of itself, >= 5:1 in both themes. */
+  --err-lifecycle: #f0b45a; --err-network: #82b4ff; --err-llm: #52d3c3; --err-loop: #c3a6ff; --err-code: #ff8f85;
   --c-c1b: #6a55c7; --c-c2: #443a78; --c-c3: #2ad6c4; --c-c4: #2e2a52;
   --c-logo-ink: #a5f2e7;
 
@@ -30,8 +40,15 @@ html[data-theme='dark'] {
 html[data-theme='light'] {
   --c-bg: #f7f8fb; --c-sidebar: #eef1f4; --c-panel: #f2f4f7; --c-raised: #fcfdfe;
   --c-code: #eaeef2; --c-canvas: #f2f4f7; --c-border: #ccd2d9;
-  --c-text: #222832; --c-text2: #55606d; --c-muted: #8a949e;
+  --c-text: #222832; --c-text2: #55606d; --c-muted: #606b77;
+  /* Solid greys, each at least 4.5:1 on every light background (worst case: the sidebar). */
+  --c-text-soft: #363e49;
+  --c-text-dim: #4d5763;
+  --c-text-faint: #5c6672;
   --c-accent: #5433a8; --c-accent-strong: #3c2380;
+  /* Same checks against the light card surface. */
+  --chart-1: #5433a8; --chart-2: #0f8f83;
+  --err-lifecycle: #8a4d00; --err-network: #1c5bb8; --err-llm: #096a60; --err-loop: #6f39b8; --err-code: #b42318;
   --c-c1b: #7a5fd0; --c-c2: #c3bce3; --c-c3: #12b3a4; --c-c4: #ded9f2;
   --c-logo-ink: #9deade;
 
@@ -41,7 +58,7 @@ html[data-theme='light'] {
   --color-accent-400: #5433a8; --color-accent-500: #5433a8; --color-accent-600: #452a8c;
   --color-accent-700: #d7cff0; --color-accent-800: #e8e3f8; --color-accent-900: #f3f0fc;
   --color-neutral-100: #444e5a; --color-neutral-200: #dde1e6; --color-neutral-300: #ccd2d9;
-  --color-neutral-400: #8a949e; --color-neutral-500: #6f7a86; --color-neutral-600: #8a949e;
+  --color-neutral-400: #8a949e; --color-neutral-500: #66717d; --color-neutral-600: #66717d;
   --color-neutral-700: #a8b0b8; --color-neutral-800: #ccd2d9; --color-neutral-900: #eef1f4;
   --shadow-sm: 0 0 0 1px #e0e5ea;
   --shadow-md: 0 0 0 1px #d6dce2, 0 4px 12px rgba(34, 40, 50, 0.08);
@@ -111,7 +128,7 @@ button { font-family: inherit; }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
 
 .mono { font-family: var(--font-mono); }
-.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.text-muted { color: var(--c-text-dim); }
 .text-mono { font-family: var(--font-mono); font-size: 13px; }
 
 .hr {
@@ -144,7 +161,7 @@ button { font-family: inherit; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field > label {
   font-size: 12px;
-  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  color: var(--c-text-soft);
 }
 .input, select.input {
   width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
@@ -175,7 +192,7 @@ button { font-family: inherit; }
 .card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent); }
 .card-title { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 17px; line-height: 1.2; }
 .card-body { margin: 0; font-size: 13px; opacity: 0.8; }
-.card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: color-mix(in srgb, var(--color-text) 50%, transparent); }
+.card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-text-dim); }
 .elev-sm { box-shadow: var(--shadow-sm); }
 .elev-md { box-shadow: var(--shadow-md); }
 .elev-lg { box-shadow: var(--shadow-lg); }
@@ -195,7 +212,7 @@ button { font-family: inherit; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th {
   text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  color: var(--c-text-dim);
   padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-divider);
 }
 .table td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-divider); }
@@ -219,7 +236,7 @@ button { font-family: inherit; }
 .themebtn { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--c-border); background: none; font-family: inherit; font-size: 12px; color: var(--c-text2); cursor: pointer; }
 .themebtn:hover { color: var(--c-text); border-color: var(--c-accent); }
 
-.sideitem { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px; font-size: 13px; color: color-mix(in srgb, var(--c-text) 62%, transparent); cursor: pointer; text-align: left; background: none; border: 0; font-family: inherit; width: 100%; text-decoration: none; }
+.sideitem { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px; font-size: 13px; color: var(--c-text-dim); cursor: pointer; text-align: left; background: none; border: 0; font-family: inherit; width: 100%; text-decoration: none; }
 .sideitem:hover { background: color-mix(in srgb, var(--c-text) 6%, transparent); color: var(--c-text); }
 .sideitem.active { background: color-mix(in srgb, var(--c-accent) 14%, transparent); color: var(--c-accent-strong); box-shadow: inset 2px 0 0 var(--c-accent); }
 

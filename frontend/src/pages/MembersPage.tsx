@@ -127,7 +127,7 @@ export function MembersPage() {
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ margin: 0 }}>Access</h4>
-          <span style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--color-text) 52%, transparent)' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--c-text-dim)' }}>
             Accounts are created here by an admin. Roles apply to this project.
           </span>
         </div>
@@ -167,7 +167,7 @@ export function MembersPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <h5 style={{ margin: 0 }}>Members</h5>
-          <span style={{ fontSize: 12, color: 'color-mix(in srgb, var(--color-text) 45%, transparent)' }}>{members.length} on this project</span>
+          <span style={{ fontSize: 12, color: 'var(--c-text-faint)' }}>{members.length} on this project</span>
         </div>
         <table className="table">
           <thead>
@@ -188,7 +188,7 @@ export function MembersPage() {
                     </span>
                     <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3 }}>
                       <span>{m.name}</span>
-                      <span style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 45%, transparent)' }}>{m.email}</span>
+                      <span style={{ fontSize: 11.5, color: 'var(--c-text-faint)' }}>{m.email}</span>
                     </div>
                   </div>
                 </td>

@@ -37,8 +37,19 @@ const NODE_H = 36
 const LEVEL_H = 90
 const COL_W = 190
 const MARGIN = 60
+// Space between rows (LEVEL_H was row pitch for single-line nodes).
+const ROW_GAP = LEVEL_H - NODE_H
+// Node labels wrap to at most two lines; a longer name ends in "…" (full name on hover).
+// ~17 monospace characters fit across a node at 12.5px.
+const NODE_LINE_CHARS = 17
+const NODE_H_TWO_LINES = 50
+const nodeHeight = (label: string) => (label.length > NODE_LINE_CHARS ? NODE_H_TWO_LINES : NODE_H)
+const MIN_ZOOM = 0.15
+const MAX_ZOOM = 2.5
+// A run opens no smaller than this, so labels are readable at a glance.
+const INITIAL_MIN_ZOOM = 0.85
 
-interface GNode { id: string; label: string; x: number; y: number; cap: boolean; visited: boolean }
+interface GNode { id: string; label: string; x: number; y: number; h: number; cap: boolean; visited: boolean }
 /** One line on the canvas: a from→to pair, with every traversal that took it. */
 interface GPath { key: string; from: string; to: string; edgeType: string | null; traversals: EdgeEvent[]; d: string; midX: number; midY: number }
 
@@ -49,9 +60,23 @@ function buildLayout(edges: EdgeEvent[], nodes: Map<string, NodeSummary>) {
   // loops and back edges don't push nodes further down.
   const level = new Map<string, number>()
   if (nodes.has('START')) level.set('START', 0)
-  for (const e of edges) {
-    if (!level.has(e.from_node)) level.set(e.from_node, 0)
-    for (const t of destinations(e)) if (!level.has(t)) level.set(t, (level.get(e.from_node) ?? 0) + 1)
+  // An edge waits until its source has a level. In a live run the edge into a node can
+  // still be missing (a parallel parent edge is only sent once its branches finish); then
+  // the stuck sources go in a new row below what's placed, not up beside START.
+  let pending = edges
+  while (pending.length) {
+    const stuck: EdgeEvent[] = []
+    for (const e of pending) {
+      if (!level.has(e.from_node)) { stuck.push(e); continue }
+      for (const t of destinations(e)) if (!level.has(t)) level.set(t, level.get(e.from_node)! + 1)
+    }
+    if (stuck.length === pending.length) {
+      const reachable = new Set(stuck.flatMap(destinations))
+      const roots = stuck.map((e) => e.from_node).filter((n) => !reachable.has(n))
+      const row = level.size ? Math.max(...level.values()) + 1 : 0
+      for (const n of roots.length ? roots : [stuck[0].from_node]) level.set(n, row)
+    }
+    pending = stuck
   }
   // Nodes in the graph that this run never reached go in rows at the bottom, wrapped so
   // they're never wider than the visited part (or 3 across), keeping the run itself centred.
@@ -71,18 +96,28 @@ function buildLayout(edges: EdgeEvent[], nodes: Map<string, NodeSummary>) {
 
   const maxCols = Math.max(...[...byLevel.values()].map((ids) => ids.length))
   const canvasW = Math.max(maxCols * COL_W, COL_W) + MARGIN * 2
-  const pos = new Map<string, { x: number; y: number }>()
+  // Each row is as tall as its tallest node, so a two-line name never overlaps a line.
+  const levels = [...byLevel.keys()].sort((a, b) => a - b)
+  const rowCenter = new Map<number, number>()
+  let top = MARGIN - NODE_H / 2
+  for (const lvl of levels) {
+    const rowH = Math.max(...byLevel.get(lvl)!.map(nodeHeight))
+    rowCenter.set(lvl, top + rowH / 2)
+    top += rowH + ROW_GAP
+  }
+  const pos = new Map<string, { x: number; y: number; h: number }>()
   const gnodes: GNode[] = []
   for (const [lvl, ids] of byLevel) {
     const startX = (canvasW - ids.length * COL_W) / 2 + COL_W / 2
     ids.forEach((id, i) => {
       const x = startX + i * COL_W
-      const y = MARGIN + lvl * LEVEL_H
-      pos.set(id, { x, y })
-      gnodes.push({ id, label: id, x, y, cap: id === 'START' || id === 'END', visited: nodes.get(id)?.visited ?? false })
+      const y = rowCenter.get(lvl)!
+      const h = nodeHeight(id)
+      pos.set(id, { x, y, h })
+      gnodes.push({ id, label: id, x, y, h, cap: id === 'START' || id === 'END', visited: nodes.get(id)?.visited ?? false })
     })
   }
-  const canvasH = MARGIN * 2 + Math.max(...byLevel.keys()) * LEVEL_H
+  const canvasH = top - ROW_GAP + MARGIN
 
   const pathByKey = new Map<string, GPath>()
   for (const e of edges) {
@@ -103,8 +138,8 @@ function buildLayout(edges: EdgeEvent[], nodes: Map<string, NodeSummary>) {
       const enterX = to.x + NODE_W / 2
       return { ...p, d: `M${exitX},${from.y} C${exitX + R},${from.y} ${enterX + R},${to.y} ${enterX},${to.y}`, midX: exitX + R * 0.85, midY: (from.y + to.y) / 2 }
     }
-    const y1 = from.y + NODE_H / 2
-    const y0 = to.y - NODE_H / 2
+    const y1 = from.y + from.h / 2
+    const y0 = to.y - to.h / 2
     const dy = (y0 - y1) * 0.45
     return { ...p, d: `M${from.x},${y1} C${from.x},${y1 + dy} ${to.x},${y0 - dy} ${to.x},${y0}`, midX: (from.x + to.x) / 2, midY: (y1 + y0) / 2 }
   })
@@ -119,7 +154,11 @@ export function TraceInspectorPage() {
   const navigate = useNavigate()
   const [run, setRun] = useState<Run | null>(null)
   const [events, setEvents] = useState<TraceEvent[]>([])
+  const [eventsLoaded, setEventsLoaded] = useState(false) // first fetch of the run's events finished
   const [selected, setSelected] = useState<Selection>(null)
+  // Earlier selections, for the inspector's Back button (most recent last).
+  const [history, setHistory] = useState<NonNullable<Selection>[]>([])
+  const [focusTick, setFocusTick] = useState(0)
   const [viewMode, setViewMode] = useState<'graph' | 'timeline' | 'raw'>('graph')
   const [legendOpen, setLegendOpen] = useState(false)
   const [stateOpen, setStateOpen] = useState(true)
@@ -134,13 +173,23 @@ export function TraceInspectorPage() {
     let unsubscribe: (() => void) | null = null
     setRun(null)
     setEvents([])
+    setEventsLoaded(false)
     setSelected(null)
+    setHistory([])
     setError(null)
     setLiveLost(false)
 
     const fail = (e: unknown) => active && setError(e instanceof Error ? e.message : 'Failed to load trace')
     const refreshRun = () => api.getRun(runId).then((r) => active && r && setRun(r)).catch(fail)
-    const fetchEvents = () => api.getRunEvents(runId).then((evs) => active && setEvents((prev) => mergeEvents(prev, evs))).catch(fail)
+    const fetchEvents = () =>
+      api
+        .getRunEvents(runId)
+        .then((evs) => {
+          if (!active) return
+          setEvents((prev) => mergeEvents(prev, evs))
+          setEventsLoaded(true)
+        })
+        .catch(fail)
 
     api
       .getRun(runId)
@@ -170,39 +219,219 @@ export function TraceInspectorPage() {
     }
   }, [runId, reloadKey])
 
-  const edges = useMemo(() => events.filter(isEdge), [events])
+  // Live events arrive in send order, where parallel branches come before their parent edge.
+  // Sort by run number (as the backend does for finished runs) so the layout matches.
+  const edges = useMemo(() => events.filter(isEdge).sort((a, b) => a.edge_run_number - b.edge_run_number), [events])
   const otherEvents = useMemo(() => events.filter((e) => !isEdge(e)), [events])
   const nodeSummaries = useMemo(() => summarizeNodes(edges, run?.graphNodes), [edges, run?.graphNodes])
   const layout = useMemo(() => buildLayout(edges, nodeSummaries), [edges, nodeSummaries])
 
-  // Fit-to-width: scale small graphs up to use the available horizontal space rather than
-  // leaving a gap on wide screens, but never shrink below 1:1. Width only, not height — the
-  // graph flows top-to-bottom, so height is almost always the tighter constraint; vertical
-  // overflow just scrolls.
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
+  // --- Graph viewport: drag to pan; buttons, Ctrl/⌘+wheel or pinch to zoom; wheel pans. ---
+  // `view` maps graph coordinates to the screen: screen = graph * k + (x, y).
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [view, setView] = useState({ x: 0, y: 0, k: 1 })
+  const [animating, setAnimating] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const drag = useRef<{ startX: number; startY: number; viewX: number; viewY: number; moved: boolean } | null>(null)
+  const suppressClick = useRef(false)
+  const fittedFor = useRef<string | null>(null)
+
+  const viewportSize = () => {
+    const r = viewportRef.current?.getBoundingClientRect()
+    return { w: r?.width ?? 0, h: r?.height ?? 0 }
+  }
+  /** Moves the view, optionally gliding there (used by Fit and Show in graph). */
+  const moveView = (next: { x: number; y: number; k: number }, animate = false) => {
+    if (animate) {
+      setAnimating(true)
+      setTimeout(() => setAnimating(false), 340)
+    }
+    setView(next)
+  }
+  /**
+   * Fits the path the run actually took (the visited nodes; the dimmed unvisited rows below
+   * don't count), never above 120% and never below `minZoom`. If the path doesn't fit at
+   * `minZoom`, the view starts at its top (START) so the text stays readable.
+   */
+  const fitView = (animate = false, minZoom = MIN_ZOOM) => {
+    const { w, h } = viewportSize()
+    if (!w || !h || layout.nodes.length === 0) return
+    const visited = layout.nodes.filter((n) => n.visited)
+    const nodes = visited.length ? visited : layout.nodes
+    const minX = Math.min(...nodes.map((n) => n.x)) - NODE_W / 2 - 20
+    const maxX = Math.max(...nodes.map((n) => n.x)) + NODE_W / 2 + 90 // room for loop-back curves on the right
+    const minY = Math.min(...nodes.map((n) => n.y - n.h / 2)) - 20
+    const maxY = Math.max(...nodes.map((n) => n.y + n.h / 2)) + 20
+    const bw = maxX - minX
+    const bh = maxY - minY
+    const k = Math.min(1.2, Math.max(minZoom, Math.min((w - 40) / bw, (h - 40) / bh)))
+    const y = bh * k <= h - 40 ? h / 2 - (minY + bh / 2) * k : 24 - minY * k
+    moveView({ k, x: w / 2 - (minX + bw / 2) * k, y }, animate)
+  }
+  /** Zooms by `factor`, keeping the screen point (cx, cy) fixed (default: viewport centre). */
+  const zoomBy = (factor: number, cx?: number, cy?: number, animate = false) => {
+    const { w, h } = viewportSize()
+    const px = cx ?? w / 2
+    const py = cy ?? h / 2
+    setView((v) => {
+      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.k * factor))
+      return { k, x: px - ((px - v.x) * k) / v.k, y: py - ((py - v.y) * k) / v.k }
+    })
+    if (animate) {
+      setAnimating(true)
+      setTimeout(() => setAnimating(false), 200)
+    }
+  }
+
+  // Fit once per run, after its events have loaded (fitting on the node list alone would
+  // size the view for nodes the run never visited). A live run that had no steps yet is
+  // fitted again once, when its first step arrives. Otherwise the view isn't moved, so it
+  // doesn't jump while someone is looking around.
+  const hasVisited = layout.nodes.some((n) => n.visited)
+
+  // Live run: orkes sends a step once its source node has finished, so the node(s) the
+  // latest step leads to are the ones running now (several for a parallel fan-out).
+  const latestEdge = run?.status === 'running' && edges.length ? edges[edges.length - 1] : null
+  const runningNow = new Set(latestEdge ? destinations(latestEdge).filter((n) => n !== 'END') : [])
+  const runningSince = latestEdge && typeof latestEdge.started_at === 'number' ? latestEdge.started_at + latestEdge.elapsed : null
+  const [nowTick, setNowTick] = useState(() => Date.now())
   useEffect(() => {
-    const el = canvasRef.current
+    if (run?.status !== 'running') return
+    const t = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [run?.status])
+  useEffect(() => {
+    if (!runId || !eventsLoaded || layout.nodes.length === 0 || viewMode !== 'graph') return
+    const key = `${runId}:${hasVisited}`
+    if (fittedFor.current === key || fittedFor.current === `${runId}:focused`) return
+    const raf = requestAnimationFrame(() => {
+      if (!viewportSize().w) return
+      fittedFor.current = key
+      fitView(false, INITIAL_MIN_ZOOM)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [runId, eventsLoaded, hasVisited, layout.nodes.length, viewMode, run !== null])
+
+  // Wheel needs a non-passive listener to stop the page from scrolling.
+  useEffect(() => {
+    const el = viewportRef.current
     if (!el) return
-    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [run !== null, viewMode])  // the canvas only exists once the run has loaded, in graph view
-  const scale = useMemo(() => {
-    if (!containerWidth) return 1
-    const PADDING = 40
-    const fit = (containerWidth - PADDING * 2) / layout.canvasW
-    return Math.min(Math.max(fit, 1), 1.4)
-  }, [containerWidth, layout.canvasW])
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl/⌘ + wheel, and trackpad pinch (which browsers report as ctrl + wheel).
+        const r = el.getBoundingClientRect()
+        zoomBy(Math.exp(-e.deltaY * 0.0022), e.clientX - r.left, e.clientY - r.top)
+      } else {
+        setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }))
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [run !== null, viewMode])
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return
+    drag.current = { startX: e.clientX, startY: e.clientY, viewX: view.x, viewY: view.y, moved: false }
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const d = drag.current
+    if (!d) return
+    const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
+    // A few pixels of slack so a click on a node or step still selects it.
+    if (!d.moved && Math.hypot(dx, dy) > 4) {
+      d.moved = true
+      setDragging(true)
+      e.currentTarget.setPointerCapture(e.pointerId)
+    }
+    if (d.moved) setView((v) => ({ ...v, x: d.viewX + dx, y: d.viewY + dy }))
+  }
+  function onPointerUp() {
+    if (drag.current?.moved) suppressClick.current = true
+    drag.current = null
+    setDragging(false)
+  }
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const pan: Record<string, [number, number]> = { ArrowLeft: [60, 0], ArrowRight: [-60, 0], ArrowUp: [0, 60], ArrowDown: [0, -60] }
+    if (e.key === '+' || e.key === '=') zoomBy(1.2, undefined, undefined, true)
+    else if (e.key === '-' || e.key === '_') zoomBy(1 / 1.2, undefined, undefined, true)
+    else if (e.key === '0') fitView(true)
+    else if (pan[e.key]) setView((v) => ({ ...v, x: v.x + pan[e.key][0], y: v.y + pan[e.key][1] }))
+    else return
+    e.preventDefault()
+  }
 
   const selectedEdge = selected?.kind === 'edge' ? edges.find((e) => e.edge_run_number === selected.runNumber) ?? null : null
   const selectedNode = selected?.kind === 'node' ? nodeSummaries.get(selected.name) ?? null : null
-  const selectEdge = (runNumber: number) => setSelected({ kind: 'edge', runNumber })
-  const selectNode = (name: string) => setSelected({ kind: 'node', name })
+  const sameSelection = (a: Selection, b: Selection) =>
+    !!a && !!b && a.kind === b.kind && (a.kind === 'node' ? a.name === (b as { name: string }).name : a.runNumber === (b as { runNumber: number }).runNumber)
+  /** Select something new, remembering the current selection for Back. */
+  const select = (next: NonNullable<Selection>) => {
+    if (sameSelection(selected, next)) return
+    if (selected) setHistory((h) => [...h.slice(-49), selected])
+    setSelected(next)
+  }
+  const selectEdge = (runNumber: number) => select({ kind: 'edge', runNumber })
+  const selectNode = (name: string) => select({ kind: 'node', name })
+  /** Stepping through loop passes replaces the selection rather than piling up Back steps. */
+  const switchPass = (runNumber: number) => setSelected({ kind: 'edge', runNumber })
+  const goBack = () => {
+    const prev = history[history.length - 1]
+    if (!prev) return
+    setHistory((h) => h.slice(0, -1))
+    setSelected(prev)
+  }
+  const previous = history[history.length - 1]
+  const previousLabel = !previous ? '' : previous.kind === 'node' ? previous.name : `step #${previous.runNumber}`
+
+  // "Show in graph": switch to the graph if needed, glide the view so the selection is in the
+  // middle (zooming in to at least 80%), then pulse it, so it can be found in large graphs.
+  useEffect(() => {
+    if (!focusTick || !selected) return
+    let pulse: ReturnType<typeof setTimeout> | undefined
+    const raf = requestAnimationFrame(() => {
+      const target =
+        selected.kind === 'node'
+          ? layout.nodes.find((n) => n.id === selected.name)
+          : (() => {
+              const p = layout.paths.find((p) => p.traversals.some((t) => t.edge_run_number === selected.runNumber))
+              return p && { x: p.midX, y: p.midY }
+            })()
+      const { w, h } = viewportSize()
+      if (!target || !w) return
+      const k = Math.max(view.k, 0.8)
+      fittedFor.current = `${runId}:focused` // don't let the first-fit override this
+      moveView({ k, x: w / 2 - target.x * k, y: h / 2 - target.y * k }, true)
+      const el =
+        selected.kind === 'node'
+          ? document.querySelector<HTMLElement>(`.gnode[data-node="${CSS.escape(selected.name)}"]`)
+          : document.querySelector<HTMLElement>(`.gstep[data-runs~="${selected.runNumber}"]`)
+      if (!el) return
+      pulse = setTimeout(() => el.animate(
+        [{ boxShadow: '0 0 0 0 color-mix(in srgb, var(--c-accent) 70%, transparent)' }, { boxShadow: '0 0 0 14px transparent' }],
+        { duration: 900, iterations: 2 },
+      ), 340)
+    })
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(pulse)
+    }
+  }, [focusTick])
 
   if (error) return <ErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
   if (!run) return <p className="text-muted">Loading…</p>
 
+  // The backend computes counts when a run ends; while it's running, count what has arrived.
+  const counts =
+    run.status === 'running'
+      ? {
+          nodes: [...nodeSummaries.values()].filter((n) => n.visited).length,
+          steps: edges.length,
+          loops: edges.length - new Set(edges.map((e) => e.edge_id)).size,
+          elapsed: formatClock(nowTick / 1000 - Date.parse(run.startedAt) / 1000),
+        }
+      : { nodes: run.nodeCount, steps: run.edgeCount, loops: run.loopCount, elapsed: formatDuration(run.elapsedUs) }
   const failedNode = run.failedNode
   const abandoned = isAbandoned(run.error)
   const err = run.error ? splitError(run.error) : null
@@ -218,9 +447,17 @@ export function TraceInspectorPage() {
             <span className="mono" style={{ fontSize: 13.5, color: 'var(--color-accent-300)' }}>{run.id}</span>
             <StatusBadge status={run.status} />
             {abandoned && <span className="tag tag-neutral" title="The orkes process stopped sending before the run ended.">Abandoned</span>}
+            {runningNow.size > 0 && (
+              <span className="tag tag-running" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} title="The node(s) the latest step led to: orkes reports a step once its source node has finished.">
+                <span className="status-dot running live-dot" style={{ margin: 0 }} />
+                <span>running now:</span>
+                <span className="mono">{[...runningNow].join(', ')}</span>
+                {runningSince !== null && <span>· {formatClock(nowTick / 1000 - runningSince)}</span>}
+              </span>
+            )}
           </div>
-          <span style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--color-text) 52%, transparent)' }}>
-            graph <span className="mono">{run.graphName}</span> · {run.nodeCount} nodes · {run.edgeCount} traversals · {run.loopCount} loops · {formatDuration(run.elapsedUs)} · started {formatDateTime(run.startedAt)}
+          <span style={{ fontSize: 11.5, color: 'var(--c-text-dim)' }}>
+            graph <span className="mono">{run.graphName}</span> · {counts.nodes} nodes · {counts.steps} traversals · {counts.loops} loops · {counts.elapsed} · started {formatDateTime(run.startedAt)}
             {run.sdkVersion && <> · orkes {run.sdkVersion}</>}
           </span>
           {run.graphDescription && <span style={{ fontSize: 11.5, color: 'var(--c-text2)' }}>{run.graphDescription}</span>}
@@ -270,12 +507,30 @@ export function TraceInspectorPage() {
         {viewMode === 'graph' && (
           <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex' }}>
             <div
-              ref={canvasRef}
-              className="scroll"
+              ref={viewportRef}
+              className="graph-viewport"
+              tabIndex={0}
+              aria-label="Run graph. Drag to move, Ctrl or ⌘ plus scroll to zoom, plus and minus keys to zoom, 0 to fit."
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onClickCapture={(e) => {
+                // The click that ends a drag shouldn't also select whatever is under the pointer.
+                if (suppressClick.current) {
+                  suppressClick.current = false
+                  e.stopPropagation()
+                }
+              }}
+              onKeyDown={onKeyDown}
               style={{
-                flex: 1, minWidth: 0, overflow: 'auto',
-                background:
-                  'radial-gradient(circle at center, color-mix(in srgb, var(--c-text) 7%, transparent) 1px, transparent 1px) 0 0 / 26px 26px, var(--c-canvas)',
+                flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden', touchAction: 'none', outline: 'none',
+                cursor: dragging ? 'grabbing' : 'grab',
+                backgroundColor: 'var(--c-canvas)',
+                // The dot grid moves and scales with the graph, so panning feels attached.
+                backgroundImage: 'radial-gradient(circle at center, color-mix(in srgb, var(--c-text) 7%, transparent) 1px, transparent 1px)',
+                backgroundSize: `${26 * view.k}px ${26 * view.k}px`,
+                backgroundPosition: `${view.x}px ${view.y}px`,
               }}
             >
               {layout.nodes.length === 0 && (
@@ -283,10 +538,13 @@ export function TraceInspectorPage() {
                   {run.status === 'running' ? 'Waiting for the first edge…' : 'No events were stored for this run (it may have been sampled out).'}
                 </p>
               )}
-              {/* outer div reserves the scaled footprint so `margin: auto` centers correctly;
-                  inner div stays at natural coordinates and is visually scaled to fill it */}
-              <div style={{ position: 'relative', width: layout.canvasW * scale, height: layout.canvasH * scale, margin: '22px auto 36px' }}>
-              <div style={{ position: 'absolute', top: 0, left: 0, width: layout.canvasW, height: layout.canvasH, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+              <div
+                style={{
+                  position: 'absolute', top: 0, left: 0, width: layout.canvasW, height: layout.canvasH, transformOrigin: '0 0',
+                  transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`,
+                  transition: animating ? 'transform 320ms ease' : 'none',
+                }}
+              >
                 <svg viewBox={`0 0 ${layout.canvasW} ${layout.canvasH}`} style={{ position: 'absolute', inset: 0, width: layout.canvasW, height: layout.canvasH, overflow: 'visible' }}>
                   <defs>
                     <marker id="ah-f" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--c-muted)" /></marker>
@@ -295,9 +553,10 @@ export function TraceInspectorPage() {
                   </defs>
                   {layout.paths.map((p) => {
                     const on = !!selectedEdge && p.traversals.includes(selectedEdge)
+                    const latest = !!latestEdge && p.traversals.includes(latestEdge) // live run: the step just taken
                     return (
                       <g key={p.key}>
-                        <path d={p.d} fill="none" stroke={on ? 'var(--c-accent-strong)' : strokeFor(p.edgeType)} strokeWidth={on ? 2.2 : 1.3} strokeDasharray={dashFor(p.edgeType)} markerEnd={markerFor(p.edgeType)} opacity={on ? 1 : 0.72} />
+                        <path d={p.d} fill="none" stroke={on || latest ? 'var(--c-accent-strong)' : strokeFor(p.edgeType)} strokeWidth={on || latest ? 2.2 : 1.3} strokeDasharray={dashFor(p.edgeType)} markerEnd={markerFor(p.edgeType)} opacity={on || latest ? 1 : 0.72} />
                         <path className="ghit" d={p.d} onClick={() => selectEdge(p.traversals[0].edge_run_number)} />
                       </g>
                     )
@@ -311,6 +570,7 @@ export function TraceInspectorPage() {
                     <div
                       key={p.key}
                       className="gstep"
+                      data-runs={p.traversals.map((t) => t.edge_run_number).join(' ')}
                       title={`traversal ${p.traversals.map((t) => `#${t.edge_run_number}`).join(', ')}`}
                       onClick={() => selectEdge(on ? selectedEdge!.edge_run_number : p.traversals[0].edge_run_number)}
                       style={{ left: p.midX, top: p.midY, borderColor: on ? 'var(--c-accent-strong)' : 'var(--c-border)', color: on ? 'var(--c-accent-strong)' : 'var(--c-text2)' }}
@@ -330,21 +590,37 @@ export function TraceInspectorPage() {
                   return (
                     <div
                       key={n.id}
-                      className="gnode"
-                      title={n.visited ? undefined : 'Not visited in this run'}
+                      className={`gnode${runningNow.has(n.id) ? ' active-now' : ''}`}
+                      data-node={n.id}
+                      title={`${n.label}${runningNow.has(n.id) ? ' (running now)' : n.visited ? '' : ' (not visited in this run)'}`}
                       onClick={() => selectNode(n.id)}
                       style={{
-                        left: n.x, top: n.y, border: `1px ${n.visited ? 'solid' : 'dashed'} ${border}`, borderRadius: n.cap ? 999 : 6, background: bg, color: fg,
+                        left: n.x, top: n.y, height: n.h, border: `1px ${n.visited ? 'solid' : 'dashed'} ${border}`, borderRadius: n.cap ? 999 : 6, background: bg, color: fg,
                         opacity: n.visited ? 1 : 0.45,
                         boxShadow: active ? '0 0 0 3px color-mix(in srgb, var(--c-accent) 22%, transparent)' : 'none',
                       }}
                     >
-                      {n.label}
+                      <span className="gnode-label">{n.label}</span>
                     </div>
                   )
                 })}
               </div>
-              </div>
+            </div>
+
+            <div className="graph-zoom" style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 3 }}>
+              <button onClick={() => zoomBy(1 / 1.25, undefined, undefined, true)} title="Zoom out (−)" aria-label="Zoom out">
+                <i className="ph ph-minus" />
+              </button>
+              <button onClick={() => zoomBy(1 / view.k, undefined, undefined, true)} title="Reset to 100%" style={{ minWidth: 52 }} className="mono">
+                {Math.round(view.k * 100)}%
+              </button>
+              <button onClick={() => zoomBy(1.25, undefined, undefined, true)} title="Zoom in (+)" aria-label="Zoom in">
+                <i className="ph ph-plus" />
+              </button>
+              <span className="graph-zoom-sep" />
+              <button onClick={() => fitView(true)} title="Fit the path this run took (0)" aria-label="Fit the path this run took">
+                <i className="ph ph-corners-out" />
+              </button>
             </div>
 
             <div style={{ position: 'absolute', bottom: 14, left: 14, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
@@ -423,6 +699,13 @@ export function TraceInspectorPage() {
             {selected && <span className={selected.kind === 'node' ? 'tag tag-accent' : 'tag tag-outline'} style={{ marginLeft: 'auto' }}>{selected.kind}</span>}
           </div>
 
+          {previous && (
+            <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', margin: '-4px 0 0 -6px' }} onClick={goBack} title="Back to what you were looking at before">
+              <i className="ph ph-arrow-left" />
+              Back to <span className="mono">{previousLabel}</span>
+            </button>
+          )}
+
           {!selectedEdge && !selectedNode && <p className="text-muted" style={{ fontSize: 13 }}>Select a node or edge to inspect it.</p>}
 
           {selectedNode && <NodeInspector node={selectedNode} failed={selectedNode.name === failedNode} edges={edges} onSelectEdge={selectEdge} />}
@@ -433,7 +716,7 @@ export function TraceInspectorPage() {
               runStartedAt={run.startedAt}
               stateOpen={stateOpen}
               onToggleState={() => setStateOpen((v) => !v)}
-              onSelectEdge={selectEdge}
+              onSelectEdge={switchPass}
             />
           )}
 
@@ -450,9 +733,17 @@ export function TraceInspectorPage() {
                 <i className="ph ph-copy" />
                 Copy ID
               </button>
-              <button className="btn btn-primary btn-block" style={{ margin: 0 }} onClick={() => setViewMode('graph')}>
+              <button
+                className="btn btn-primary btn-block"
+                style={{ margin: 0 }}
+                title="Scroll the graph to this item and highlight it"
+                onClick={() => {
+                  setViewMode('graph')
+                  setFocusTick((t) => t + 1)
+                }}
+              >
                 <i className="ph ph-crosshair" />
-                Focus
+                Show in graph
               </button>
             </div>
           )}
@@ -460,6 +751,14 @@ export function TraceInspectorPage() {
       </div>
     </div>
   )
+}
+
+/** Live durations: "8s", "2m 05s", "1h 03m". */
+function formatClock(seconds: number): string {
+  const t = Math.max(0, Math.floor(seconds))
+  if (t < 60) return `${t}s`
+  if (t < 3600) return `${Math.floor(t / 60)}m ${String(t % 60).padStart(2, '0')}s`
+  return `${Math.floor(t / 3600)}h ${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}m`
 }
 
 function formatTargets(e: EdgeEvent): string {
@@ -475,7 +774,7 @@ function LegendRow({ children }: { children: React.ReactNode }) {
 function KVRow({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{ display: 'contents' }}>
-      <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'color-mix(in srgb, var(--c-text) 42%, transparent)', paddingTop: 2 }}>{label}</span>
+      <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--c-text-faint)', paddingTop: 2 }}>{label}</span>
       <span className="mono" style={{ fontSize: 12, wordBreak: 'break-all', color: color ?? 'var(--c-text)' }}>{value}</span>
     </div>
   )
@@ -484,7 +783,7 @@ function KVRow({ label, value, color }: { label: string; value: string; color?: 
 function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'color-mix(in srgb, var(--c-text) 42%, transparent)' }}>{children}</span>
+      <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--c-text-faint)' }}>{children}</span>
       {count !== undefined && <span className="tag tag-neutral" style={{ marginLeft: 'auto' }}>{count}</span>}
     </div>
   )
@@ -509,7 +808,7 @@ function NodeInspector({ node, failed, edges, onSelectEdge }: { node: NodeSummar
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '11px 12px', borderRadius: 8, background: 'var(--c-raised)', boxShadow: `inset 3px 0 0 ${failed ? 'var(--color-danger)' : 'var(--color-accent)'}` }}>
         <span className="mono" style={{ fontSize: 13.5 }}>{node.name}</span>
-        {node.description && <span style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 55%, transparent)' }}>{node.description}</span>}
+        {node.description && <span style={{ fontSize: 11.5, color: 'var(--c-text-dim)' }}>{node.description}</span>}
         {failed && <span style={{ fontSize: 11.5, color: 'var(--color-danger)' }}>The run failed while in this node.</span>}
         {!node.visited && <span style={{ fontSize: 11.5, color: 'var(--c-muted)' }}>Part of the graph, but not visited in this run.</span>}
       </div>
@@ -556,7 +855,7 @@ function EdgeInspector({
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '11px 12px', borderRadius: 8, background: 'var(--c-raised)', boxShadow: 'inset 3px 0 0 var(--color-accent)' }}>
         <span className="mono" style={{ fontSize: 13.5 }}>{event.from_node} → {formatTargets(event)}</span>
-        <span style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 55%, transparent)' }}>
+        <span style={{ fontSize: 11.5, color: 'var(--c-text-dim)' }}>
           step #{event.edge_run_number} · {edgeTypeKey(event.edge_type)} edge
           {typeof event.passes_left === 'number' && ` · ${event.passes_left} passes left`}
         </span>
@@ -627,7 +926,7 @@ function TracesBlock({ label, count, children }: { label: string; count?: number
 }
 
 const cardStyle = { display: 'flex', flexDirection: 'column', gap: 7, padding: '10px 11px', borderRadius: 8, background: 'var(--c-raised)', boxShadow: 'inset 0 0 0 1px var(--color-divider)' } as const
-const dimLabel = { color: 'color-mix(in srgb, var(--c-text) 42%, transparent)' } as const
+const dimLabel = { color: 'var(--c-text-faint)' } as const
 
 function FunctionCard({ fn }: { fn: FunctionTrace }) {
   const hasArgs = Array.isArray(fn.input_args) && fn.input_args.length > 0
@@ -637,7 +936,7 @@ function FunctionCard({ fn }: { fn: FunctionTrace }) {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <i className="ph ph-function" style={{ fontSize: 13, color: 'var(--color-accent-400)' }} />
         <span className="mono" style={{ fontSize: 12.5 }}>{fn.function_name}</span>
-        <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'color-mix(in srgb, var(--c-text) 50%, transparent)' }}>{formatSeconds(fn.elapsed)}</span>
+        <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--c-text-dim)' }}>{formatSeconds(fn.elapsed)}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '54px 1fr', gap: '5px 8px', fontSize: 11.5 }}>
         {hasArgs && <><span style={dimLabel}>args</span><span className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{JSON.stringify(fn.input_args)}</span></>}

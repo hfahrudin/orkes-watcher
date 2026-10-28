@@ -23,6 +23,7 @@ class RunOut(CamelModel):
     graph_description: str | None
     contract_version: str | None
     sdk_version: str | None
+    last_event_at: datetime | None
 
 
 class RunDetailOut(RunOut):
@@ -38,12 +39,40 @@ class NodeStatOut(CamelModel):
     total_duration_us: int
 
 
-class HourlyBar(CamelModel):
+StatsRange = Literal["1h", "24h", "7d", "30d"]
+
+
+class TimelineBucket(CamelModel):
+    start: datetime
     ok: int
     fail: int
+    # Run time of runs that ended in this bucket's runs (None when none did).
+    p50_us: int | None = None
+    p95_us: int | None = None
+
+
+class ErrorGroupOut(CamelModel):
+    message: str
+    count: int
+    last_seen: datetime
+    sample_run_id: uuid.UUID
+
+
+class NodeFailureOut(CamelModel):
+    node_name: str
+    count: int
+
+
+class LiveOut(CamelModel):
+    running_count: int
+    running: list[RunOut]
+    abandoned_in_range: int
 
 
 class ProjectStatsOut(CamelModel):
+    range: StatsRange
+    graph: str | None
+    graph_names: list[str]
     by_outcome: dict[RunStatus, int]
     slowest_nodes: list[NodeStatOut]
     latest_traces: list[RunOut]
@@ -51,4 +80,9 @@ class ProjectStatsOut(CamelModel):
     total_edge_traversals: int
     total_loop_reentries: int
     finished_pct: float
-    hourly_bars: list[HourlyBar]
+    bucket_seconds: int
+    timeline: list[TimelineBucket]
+    top_errors: list[ErrorGroupOut]
+    failures_by_node: list[NodeFailureOut]
+    failures_without_node: int
+    live: LiveOut

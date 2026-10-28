@@ -101,7 +101,7 @@ export function LoginPage() {
             fontSize: 11.5,
             lineHeight: 1.7,
             whiteSpace: 'pre-wrap',
-            color: 'color-mix(in srgb, var(--c-text) 80%, transparent)',
+            color: 'var(--c-text-soft)',
           }}
         >
           <span style={{ color: 'var(--c-accent-strong)' }}>from</span> orkes.exporters.watcher{' '}

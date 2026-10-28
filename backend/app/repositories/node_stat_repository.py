@@ -1,52 +1,30 @@
 import uuid
+from collections import defaultdict
 
-from sqlalchemy import Float, cast, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Float, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.run import NodeStat
+from app.models.run import Run, RunNodeStat
+from app.repositories.run_repository import Scope
 
 
-async def upsert_many(db: AsyncSession, project_id: uuid.UUID, nodes: list[dict]) -> None:
-    """`nodes`: [{node_name, duration_us}], one row per node *visit* this run —
-    a node visited 3 times in a loop appears 3 times, so counts add up correctly."""
-    if not nodes:
-        return
-    for node in nodes:
-        stmt = insert(NodeStat).values(
-            project_id=project_id,
-            node_name=node["node_name"],
-            run_count=0,  # bump_run_counts is the sole source of run_count increments
-            visit_count=1,
-            total_duration_us=node["duration_us"],
-        )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[NodeStat.project_id, NodeStat.node_name],
-            set_={
-                "visit_count": NodeStat.visit_count + 1,
-                "total_duration_us": NodeStat.total_duration_us + node["duration_us"],
-            },
-        )
-        await db.execute(stmt)
+async def save_for_run(db: AsyncSession, project_id: uuid.UUID, run_id: uuid.UUID, visits: list[dict]) -> None:
+    """`visits`: [{node_name, duration_us}], one entry per node visit in the run (a node
+    visited 3 times in a loop appears 3 times). Stored as one row per node."""
+    per_node: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for v in visits:
+        per_node[v["node_name"]][0] += 1
+        per_node[v["node_name"]][1] += v["duration_us"]
+    db.add_all(RunNodeStat(run_id=run_id, project_id=project_id, node_name=name, visits=n, total_us=total) for name, (n, total) in per_node.items())
     await db.flush()
 
 
-async def bump_run_counts(db: AsyncSession, project_id: uuid.UUID, node_names: set[str]) -> None:
-    """Called once per finished run, after upsert_many's per-visit increments, to bump
-    `run_count` (distinct runs touching this node) exactly once per node per run."""
-    for node_name in node_names:
-        result = await db.execute(select(NodeStat).where(NodeStat.project_id == project_id, NodeStat.node_name == node_name))
-        stat = result.scalar_one_or_none()
-        if stat:
-            stat.run_count += 1
-    await db.flush()
-
-
-async def top(db: AsyncSession, project_id: uuid.UUID, limit: int = 6) -> list[NodeStat]:
-    result = await db.execute(
-        select(NodeStat)
-        .where(NodeStat.project_id == project_id, NodeStat.visit_count > 0)
-        .order_by((cast(NodeStat.total_duration_us, Float) / NodeStat.visit_count).desc())
-        .limit(limit)
-    )
-    return list(result.scalars().all())
+async def slowest(db: AsyncSession, scope: Scope, limit: int = 6) -> list[dict]:
+    """Nodes with the highest mean time per visit, over the runs in `scope`."""
+    visits = func.sum(RunNodeStat.visits)
+    total = func.sum(RunNodeStat.total_us)
+    stmt = scope.apply(
+        select(RunNodeStat.node_name, func.count(RunNodeStat.run_id), visits, total).join(Run, Run.id == RunNodeStat.run_id)
+    ).group_by(RunNodeStat.node_name).having(visits > 0).order_by((cast(total, Float) / visits).desc(), RunNodeStat.node_name).limit(limit)
+    rows = (await db.execute(stmt)).all()
+    return [{"node_name": r[0], "run_count": r[1], "visit_count": int(r[2]), "total_duration_us": int(r[3])} for r in rows]

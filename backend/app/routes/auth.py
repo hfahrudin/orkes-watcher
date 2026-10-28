@@ -20,7 +20,7 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
     except auth_service.InvalidCredentials:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
     await db.commit()
-    response.set_cookie(settings.session_cookie_name, session.id, httponly=True, samesite="lax", secure=settings.cookie_secure, max_age=60 * 60 * 24 * 30)
+    response.set_cookie(settings.session_cookie_name, session.id, httponly=True, samesite="lax", secure=settings.cookie_secure, max_age=settings.session_lifetime_days * 86400)
     return user
 
 
@@ -41,7 +41,7 @@ async def activate(body: ActivateRequest, request: Request, response: Response, 
     except auth_service.InvalidActivation:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Activation link is invalid or has expired")
     await db.commit()
-    response.set_cookie(settings.session_cookie_name, session.id, httponly=True, samesite="lax", secure=settings.cookie_secure, max_age=60 * 60 * 24 * 30)
+    response.set_cookie(settings.session_cookie_name, session.id, httponly=True, samesite="lax", secure=settings.cookie_secure, max_age=settings.session_lifetime_days * 86400)
     return user
 
 

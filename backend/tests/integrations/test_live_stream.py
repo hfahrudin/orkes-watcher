@@ -284,3 +284,25 @@ def test_socket_rejects_non_members(client, secret):
         with outsider.websocket_connect(f"/runs/{sink.run_id}/live"):
             pass
     assert rejected.value.code == 1008
+
+
+def test_socket_rejects_an_expired_session(client, secret):
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update
+
+    from app.models.identity import Session
+
+    sink = FakeWatcherSink()
+    send(client, secret, sink.on_run_start(graph_nodes()))
+
+    async def expire(token: str) -> None:
+        async with db_module.SessionLocal() as db:
+            await db.execute(update(Session).where(Session.id == token).values(created_at=datetime.now(timezone.utc) - timedelta(days=31)))
+            await db.commit()
+
+    client.portal.call(expire, client.cookies["orkes_session"])
+    with pytest.raises(WebSocketDisconnect) as rejected:
+        with client.websocket_connect(f"/runs/{sink.run_id}/live"):
+            pass
+    assert rejected.value.code == 1008

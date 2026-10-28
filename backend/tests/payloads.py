@@ -2,11 +2,13 @@
 WatcherSink sends (working_context/INTEGRATION_AGREEMENT.md §2). Shared by the
 integration and load tests."""
 
+import time
 import uuid
 
 from httpx import AsyncClient
 
-START_TIME = 1_790_000_000.0  # Unix seconds, orkes's clock
+# Unix seconds, orkes's clock. Recent, so test runs fall inside the dashboard's time ranges.
+START_TIME = float(int(time.time()) - 60)
 
 
 async def project_and_ingest_secret(admin_client: AsyncClient) -> tuple[str, str]:

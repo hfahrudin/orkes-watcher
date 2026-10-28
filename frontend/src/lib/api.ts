@@ -27,6 +27,10 @@ interface RequestOptions extends RequestInit {
 }
 
 async function request<T>(path: string, init?: RequestOptions): Promise<T> {
+  return (await requestWithHeaders<T>(path, init)).body
+}
+
+async function requestWithHeaders<T>(path: string, init?: RequestOptions): Promise<{ body: T; headers: Headers }> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: 'include',
@@ -43,8 +47,8 @@ async function request<T>(path: string, init?: RequestOptions): Promise<T> {
     const message = typeof body?.detail === 'string' ? body.detail : Array.isArray(body?.detail) ? body.detail.map((d: { msg: string }) => d.msg).join('; ') : res.statusText
     throw new ApiError(res.status, message)
   }
-  if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T
-  return res.json() as Promise<T>
+  if (res.status === 204 || res.headers.get('content-length') === '0') return { body: undefined as T, headers: res.headers }
+  return { body: (await res.json()) as T, headers: res.headers }
 }
 
 async function getOrUndefined<T>(path: string): Promise<T | undefined> {
@@ -105,15 +109,44 @@ export async function deleteProject(id: string): Promise<void> {
   await request<void>(`/projects/${id}`, { method: 'DELETE' })
 }
 
-export async function listRuns(projectId: string): Promise<Run[]> {
-  return request<Run[]>(`/projects/${projectId}/runs`)
+export interface RunsQuery {
+  status?: Run['status']
+  search?: string
+  /** Text within the error message (case-insensitive). */
+  error?: string
+  failedNode?: string
+  limit: number
+  offset: number
+}
+
+/** One page of runs, newest first, filtered on the server, plus the total matching. */
+export async function listRunsPage(projectId: string, q: RunsQuery): Promise<{ runs: Run[]; total: number }> {
+  const params = new URLSearchParams({ limit: String(q.limit), offset: String(q.offset) })
+  if (q.status) params.set('status', q.status)
+  if (q.search) params.set('search', q.search)
+  if (q.error) params.set('error', q.error)
+  if (q.failedNode) params.set('failedNode', q.failedNode)
+  const { body, headers } = await requestWithHeaders<Run[]>(`/projects/${projectId}/runs?${params}`)
+  const total = Number(headers.get('X-Total-Count'))
+  return { runs: body, total: Number.isFinite(total) ? total : body.length }
+}
+
+/** Number of runs in a project, without fetching them. */
+export async function countRuns(projectId: string): Promise<number> {
+  return (await listRunsPage(projectId, { limit: 1, offset: 0 })).total
 }
 
 export async function getRun(id: string): Promise<Run | undefined> {
   return getOrUndefined<Run>(`/runs/${id}`)
 }
 
-interface ProjectStats {
+export type StatsRange = '1h' | '24h' | '7d' | '30d'
+
+export interface ProjectStats {
+  range: StatsRange
+  graph: string | null
+  /** Every graph name seen in the project (unfiltered), for the graph filter. */
+  graphNames: string[]
   byOutcome: Record<Run['status'], number>
   slowestNodes: NodeStat[]
   latestTraces: Run[]
@@ -121,11 +154,23 @@ interface ProjectStats {
   totalEdgeTraversals: number
   totalLoopReentries: number
   finishedPct: number
-  hourlyBars: { ok: number; fail: number }[]
+  bucketSeconds: number
+  /** Per bucket: run counts, plus p50/p95 run time of runs that ended (null if none). */
+  timeline: { start: string; ok: number; fail: number; p50Us: number | null; p95Us: number | null }[]
+  /** Failed runs grouped by the first line of their error. */
+  topErrors: { message: string; count: number; lastSeen: string; sampleRunId: string }[]
+  failuresByNode: { nodeName: string; count: number }[]
+  /** Failed runs with no failed node recorded (e.g. abandoned). */
+  failuresWithoutNode: number
+  /** Ignores the time range (it's about now), respects the graph filter. */
+  live: { runningCount: number; running: Run[]; abandonedInRange: number }
 }
 
-export async function getProjectStats(projectId: string): Promise<ProjectStats> {
-  return request<ProjectStats>(`/projects/${projectId}/stats`)
+/** Every figure covers the same runs: started within `range`, and only `graph` if given. */
+export async function getProjectStats(projectId: string, filters: { range: StatsRange; graph?: string }): Promise<ProjectStats> {
+  const params = new URLSearchParams({ range: filters.range })
+  if (filters.graph) params.set('graph', filters.graph)
+  return request<ProjectStats>(`/projects/${projectId}/stats?${params}`)
 }
 
 /** Trace events exactly as orkes sent them (snake_case), ordered by edge_run_number. */

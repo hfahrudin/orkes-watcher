@@ -12,6 +12,7 @@ export function formatRelativeTime(iso: string): string {
 
 export function formatDuration(us: number | null): string {
   if (us === null) return '—'
+  if (us === 0) return '0s'
   if (us < 1000) return `${us}µs`
   if (us < 1_000_000) return `${(us / 1000).toFixed(0)}ms`
   return `${(us / 1_000_000).toFixed(2)}s`

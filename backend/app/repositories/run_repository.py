@@ -1,8 +1,9 @@
 import uuid
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import aggregate_order_by, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
@@ -67,15 +68,41 @@ async def get(db: AsyncSession, run_id: uuid.UUID) -> Run | None:
     return await db.get(Run, run_id)
 
 
-async def list_by_project(db: AsyncSession, project_id: uuid.UUID, *, status: str | None = None, search: str | None = None, limit: int = 200, offset: int = 0) -> list[Run]:
-    stmt = select(Run).where(Run.project_id == project_id)
+def _escape_like(text: str) -> str:
+    """For ILIKE with escape='\\': % and _ match themselves, not any text."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _filtered(stmt, project_id: uuid.UUID, status: str | None, search: str | None, error: str | None = None, failed_node: str | None = None):
+    stmt = stmt.where(Run.project_id == project_id)
     if status:
         stmt = stmt.where(Run.status == status)
     if search:
-        stmt = stmt.where(Run.graph_name.ilike(f"%{search}%"))
-    stmt = stmt.order_by(Run.started_at.desc()).limit(limit).offset(offset)
+        # Case-insensitive match on graph name or run id; % and _ are literal, not wildcards.
+        pattern = f"%{_escape_like(search)}%"
+        stmt = stmt.where(or_(Run.graph_name.ilike(pattern, escape="\\"), cast(Run.id, String).ilike(pattern, escape="\\")))
+    if error:  # dashboard "Top errors" links here with an error's first line
+        stmt = stmt.where(Run.error.ilike(f"%{_escape_like(error)}%", escape="\\"))
+    if failed_node:
+        stmt = stmt.where(Run.failed_node == failed_node)
+    return stmt
+
+
+async def list_by_project(
+    db: AsyncSession, project_id: uuid.UUID, *, status: str | None = None, search: str | None = None,
+    error: str | None = None, failed_node: str | None = None, limit: int = 200, offset: int = 0,
+) -> list[Run]:
+    stmt = _filtered(select(Run), project_id, status, search, error, failed_node).order_by(Run.started_at.desc(), Run.id).limit(limit).offset(offset)
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+async def count_by_project(
+    db: AsyncSession, project_id: uuid.UUID, *, status: str | None = None, search: str | None = None,
+    error: str | None = None, failed_node: str | None = None,
+) -> int:
+    result = await db.execute(_filtered(select(func.count()).select_from(Run), project_id, status, search, error, failed_node))
+    return result.scalar_one()
 
 
 async def finish(
@@ -105,41 +132,100 @@ async def finish(
     return run
 
 
-async def counts_by_status(db: AsyncSession, project_id: uuid.UUID) -> dict[str, int]:
-    result = await db.execute(select(Run.status, func.count()).where(Run.project_id == project_id).group_by(Run.status))
+@dataclass(frozen=True)
+class Scope:
+    """Which runs a dashboard query covers: one project, optionally from `since` onward
+    and for one graph."""
+
+    project_id: uuid.UUID
+    since: datetime | None = None
+    graph: str | None = None
+
+    def apply(self, stmt):
+        stmt = stmt.where(Run.project_id == self.project_id)
+        if self.since is not None:
+            stmt = stmt.where(Run.started_at >= self.since)
+        if self.graph:
+            stmt = stmt.where(Run.graph_name == self.graph)
+        return stmt
+
+
+async def counts_by_status(db: AsyncSession, scope: Scope) -> dict[str, int]:
+    result = await db.execute(scope.apply(select(Run.status, func.count())).group_by(Run.status))
     counts = {"running": 0, "finished": 0, "failed": 0}
     for status, count in result.all():
         counts[status] = count
     return counts
 
 
-async def latest(db: AsyncSession, project_id: uuid.UUID, limit: int = 5) -> list[Run]:
-    result = await db.execute(select(Run).where(Run.project_id == project_id).order_by(Run.started_at.desc()).limit(limit))
+async def latest(db: AsyncSession, scope: Scope, limit: int = 5) -> list[Run]:
+    result = await db.execute(scope.apply(select(Run)).order_by(Run.started_at.desc(), Run.id).limit(limit))
     return list(result.scalars().all())
 
 
-async def elapsed_percentile(db: AsyncSession, project_id: uuid.UUID, percentile: float = 0.95) -> int | None:
-    result = await db.execute(
-        select(func.percentile_cont(percentile).within_group(Run.elapsed_us)).where(Run.project_id == project_id, Run.elapsed_us.is_not(None))
-    )
-    value = result.scalar_one_or_none()
+async def elapsed_percentile(db: AsyncSession, scope: Scope, percentile: float = 0.95) -> int | None:
+    stmt = scope.apply(select(func.percentile_cont(percentile).within_group(Run.elapsed_us))).where(Run.elapsed_us.is_not(None))
+    value = (await db.execute(stmt)).scalar_one_or_none()
     return int(value) if value is not None else None
 
 
-async def sums(db: AsyncSession, project_id: uuid.UUID) -> tuple[int, int]:
-    result = await db.execute(select(func.coalesce(func.sum(Run.edge_count), 0), func.coalesce(func.sum(Run.loop_count), 0)).where(Run.project_id == project_id))
-    row = result.one()
+async def sums(db: AsyncSession, scope: Scope) -> tuple[int, int]:
+    stmt = scope.apply(select(func.coalesce(func.sum(Run.edge_count), 0), func.coalesce(func.sum(Run.loop_count), 0)))
+    row = (await db.execute(stmt)).one()
     return int(row[0]), int(row[1])
 
 
-async def hourly_counts(db: AsyncSession, project_id: uuid.UUID, since: datetime) -> list[tuple[datetime, str, int]]:
-    bucket = func.date_trunc("hour", Run.started_at)
-    result = await db.execute(
-        select(bucket.label("bucket"), Run.status, func.count())
-        .where(Run.project_id == project_id, Run.started_at >= since)
-        .group_by(bucket, Run.status)
-    )
+async def bucket_counts(db: AsyncSession, scope: Scope, *, bucket: timedelta, origin: datetime) -> list[tuple[datetime, str, int]]:
+    """Run counts per (time bucket, status). Buckets are `bucket` wide, aligned to `origin`."""
+    start = func.date_bin(bucket, Run.started_at, origin)
+    result = await db.execute(scope.apply(select(start.label("bucket"), Run.status, func.count())).group_by(start, Run.status))
     return [(row[0], row[1], row[2]) for row in result.all()]
+
+
+async def bucket_durations(db: AsyncSession, scope: Scope, *, bucket: timedelta, origin: datetime) -> list[tuple[datetime, int, int]]:
+    """(bucket start, p50 µs, p95 µs) of run time for ended runs, per time bucket."""
+    start = func.date_bin(bucket, Run.started_at, origin)
+    stmt = scope.apply(
+        select(start, func.percentile_cont(0.5).within_group(Run.elapsed_us), func.percentile_cont(0.95).within_group(Run.elapsed_us))
+    ).where(Run.status != "running", Run.elapsed_us.is_not(None)).group_by(start)
+    return [(r[0], int(r[1]), int(r[2])) for r in (await db.execute(stmt)).all()]
+
+
+async def top_errors(db: AsyncSession, scope: Scope, limit: int = 5) -> list[dict]:
+    """Failed runs grouped by the first line of their error (orkes puts
+    "<ExceptionType>: <message>" there), most frequent first."""
+    message = func.split_part(Run.error, "\n", 1)
+    stmt = scope.apply(
+        select(message, func.count(), func.max(Run.started_at), func.array_agg(aggregate_order_by(Run.id, Run.started_at.desc()))[1])
+    ).where(Run.status == "failed", Run.error.is_not(None)).group_by(message).order_by(func.count().desc(), message).limit(limit)
+    return [{"message": r[0], "count": r[1], "last_seen": r[2], "sample_run_id": r[3]} for r in (await db.execute(stmt)).all()]
+
+
+async def failures_by_node(db: AsyncSession, scope: Scope, limit: int = 6) -> tuple[list[dict], int]:
+    """(failed runs per failed_node, most first; failed runs with no failed_node, e.g. abandoned)."""
+    failed = scope.apply(select(Run.failed_node, func.count())).where(Run.status == "failed").group_by(Run.failed_node)
+    rows = (await db.execute(failed)).all()
+    without = sum(r[1] for r in rows if r[0] is None)
+    per_node = sorted(({"node_name": r[0], "count": r[1]} for r in rows if r[0] is not None), key=lambda x: (-x["count"], x["node_name"]))
+    return per_node[:limit], without
+
+
+async def live_now(db: AsyncSession, project_id: uuid.UUID, graph: str | None, limit: int = 8) -> tuple[list[Run], int]:
+    """Runs still in progress, most recently active first, regardless of time range."""
+    scope = Scope(project_id=project_id, graph=graph)
+    runs = (await db.execute(scope.apply(select(Run)).where(Run.status == "running").order_by(func.coalesce(Run.last_event_at, Run.started_at).desc()).limit(limit))).scalars().all()
+    total = (await db.execute(scope.apply(select(func.count()).select_from(Run)).where(Run.status == "running"))).scalar_one()
+    return list(runs), total
+
+
+async def abandoned_count(db: AsyncSession, scope: Scope) -> int:
+    stmt = scope.apply(select(func.count()).select_from(Run)).where(Run.status == "failed", Run.error.like("abandoned:%"))
+    return (await db.execute(stmt)).scalar_one()
+
+
+async def graph_names(db: AsyncSession, project_id: uuid.UUID, limit: int = 200) -> list[str]:
+    result = await db.execute(select(Run.graph_name).where(Run.project_id == project_id).distinct().order_by(Run.graph_name).limit(limit))
+    return list(result.scalars().all())
 
 
 async def delete_expired(db: AsyncSession, project_id: uuid.UUID, *, before: datetime) -> list[Run]:

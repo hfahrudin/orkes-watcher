@@ -67,8 +67,7 @@ export function KeysPage() {
     setActionError(null)
     setVerifying(true)
     try {
-      const runs = await api.listRuns(projectId)
-      setVerified(runs.length > 0)
+      setVerified((await api.countRuns(projectId)) > 0)
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Failed to verify ingest')
     } finally {
@@ -85,7 +84,7 @@ export function KeysPage() {
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ margin: 0 }}>API keys</h4>
-          <span style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--color-text) 52%, transparent)' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--c-text-dim)' }}>
             Every key is scoped to this project. Traces sent with a key land here.
           </span>
         </div>
@@ -112,10 +111,10 @@ export function KeysPage() {
           {keys.map((k) => (
             <tr key={k.id} style={{ cursor: 'default' }}>
               <td>{k.label}</td>
-              <td className="mono" style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--c-text) 62%, transparent)', whiteSpace: 'nowrap' }}>{k.prefix}••••</td>
+              <td className="mono" style={{ fontSize: 12.5, color: 'var(--c-text-dim)', whiteSpace: 'nowrap' }}>{k.prefix}••••</td>
               <td><span className={SCOPE_TAG[k.scope]}>{k.scope}</span></td>
-              <td className="mono" style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 50%, transparent)' }} title={k.createdBy}>{k.createdBy.slice(0, 8)}</td>
-              <td style={{ color: 'color-mix(in srgb, var(--c-text) 55%, transparent)' }}>{k.lastUsedAt ? formatRelativeTime(k.lastUsedAt) : 'never'}</td>
+              <td className="mono" style={{ fontSize: 11.5, color: 'var(--c-text-dim)' }} title={k.createdBy}>{k.createdBy.slice(0, 8)}</td>
+              <td style={{ color: 'var(--c-text-dim)' }}>{k.lastUsedAt ? formatRelativeTime(k.lastUsedAt) : 'never'}</td>
               <td style={{ textAlign: 'right' }}>
                 <RoleGate roles={['admin', 'developer']}>
                   {k.scope !== 'revoked' && (
@@ -131,7 +130,7 @@ export function KeysPage() {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', paddingTop: 4 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 9 }}>
           <h5 style={{ margin: 0 }}>Send your first trace</h5>
-          <span style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--color-text) 58%, transparent)' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--c-text-dim)' }}>
             Add a <span className="mono">WatcherSink</span> to the <span className="mono">OrkesGraph</span> you already build, with an ingest key from above. Every edge traversal, state snapshot, function and LLM call is sent here while the run executes. Needs orkes 0.1.4 or later.
           </span>
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -145,7 +144,7 @@ export function KeysPage() {
           </div>
           {verified && <span style={{ color: 'var(--color-success)', fontSize: 12.5 }}>A trace was received for this project.</span>}
         </div>
-        <pre className="mono" style={{ flex: 1.2, padding: '14px 16px', borderRadius: 10, background: 'var(--c-code)', boxShadow: 'inset 0 0 0 1px var(--color-divider)', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'color-mix(in srgb, var(--c-text) 80%, transparent)' }}>
+        <pre className="mono" style={{ flex: 1.2, padding: '14px 16px', borderRadius: 10, background: 'var(--c-code)', boxShadow: 'inset 0 0 0 1px var(--color-divider)', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--c-text-soft)' }}>
           <span style={{ color: 'var(--color-neutral-600)' }}># pip install "orkes[watcher]"{'\n'}</span>
           <span style={{ color: 'var(--color-accent-300)' }}>from</span> orkes <span style={{ color: 'var(--color-accent-300)' }}>import</span> OrkesGraph{'\n'}
           <span style={{ color: 'var(--color-accent-300)' }}>from</span> orkes.exporters.watcher <span style={{ color: 'var(--color-accent-300)' }}>import</span> WatcherSink{'\n\n'}

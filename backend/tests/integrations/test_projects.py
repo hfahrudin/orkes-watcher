@@ -73,3 +73,21 @@ async def test_only_admin_can_delete_project(admin_client: AsyncClient, login_as
 
     assert (await admin_client.delete(f"/projects/{project['id']}")).status_code == 200
     assert (await admin_client.get(f"/projects/{project['id']}")).status_code == 404
+
+
+async def test_retention_can_be_set_to_never_and_back(admin_client: AsyncClient):
+    project = (await admin_client.post("/projects", json={"name": "keep", "env": "local"})).json()
+    r = await admin_client.patch(f"/projects/{project['id']}", json={"retentionDays": None})
+    assert r.status_code == 200 and r.json()["retentionDays"] is None
+    # Changing something else leaves "never" alone.
+    r = await admin_client.patch(f"/projects/{project['id']}", json={"samplingPct": 50})
+    assert r.json()["retentionDays"] is None and r.json()["samplingPct"] == 50
+    r = await admin_client.patch(f"/projects/{project['id']}", json={"retentionDays": 7})
+    assert r.json()["retentionDays"] == 7
+
+
+async def test_only_retention_can_be_cleared(admin_client: AsyncClient):
+    project = (await admin_client.post("/projects", json={"name": "p", "env": "local"})).json()
+    for field in ("name", "samplingPct", "abandonAfterMinutes"):
+        r = await admin_client.patch(f"/projects/{project['id']}", json={field: None})
+        assert r.status_code == 422, field

@@ -16,8 +16,9 @@ async def run_live(websocket: WebSocket, run_id: uuid.UUID):
     """Auth happens before `accept()` — session cookie at handshake, per API.md."""
     token = websocket.cookies.get(settings.session_cookie_name)
     async with SessionLocal() as db:
-        session = await session_repository.get_by_id(db, token) if token else None
+        session = await session_repository.get_valid(db, token) if token else None
         if not session:
+            await db.commit()  # keeps the deletion of an expired session
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         user = await user_repository.get_by_id(db, session.user_id)

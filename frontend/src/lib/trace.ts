@@ -55,6 +55,7 @@ export function splitError(error: string): { summary: string; detail: string } {
 /** Seconds -> "850µs" / "12ms" / "1.24s". orkes times are float seconds. */
 export function formatSeconds(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return '—'
+  if (seconds === 0) return '0s'
   if (seconds < 0.001) return `${Math.round(seconds * 1_000_000)}µs`
   if (seconds < 1) return `${Math.round(seconds * 1000)}ms`
   return `${seconds.toFixed(2)}s`

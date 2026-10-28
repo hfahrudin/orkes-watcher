@@ -28,9 +28,9 @@ async def list_for_user(db: AsyncSession, *, user_id: uuid.UUID, is_admin: bool)
 
 
 async def update(db: AsyncSession, project: Project, **fields) -> Project:
+    """Sets exactly the given fields (callers pass only what the request contained)."""
     for key, value in fields.items():
-        if value is not None:
-            setattr(project, key, value)
+        setattr(project, key, value)
     await db.flush()
     return project
 

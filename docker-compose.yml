@@ -33,6 +33,8 @@ services:
       ORKES_CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-8080}"]'
       # Set to true once this sits behind real HTTPS — see settings.py's comment.
       ORKES_COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # How long a sign-in lasts, in days (enforced by the server, not just the cookie).
+      ORKES_SESSION_LIFETIME_DAYS: ${SESSION_LIFETIME_DAYS:-30}
     depends_on:
       postgres:
         condition: service_healthy

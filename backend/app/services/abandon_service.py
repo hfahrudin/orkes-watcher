@@ -1,20 +1,16 @@
 """Marks runs that never sent run_end as failed ("abandoned"), per contract §2.2.
+Run periodically by maintenance_service.
 
 Runs inside the backend process (not as a cron script like retention.py), because a
 running run's events live in this process's in-memory live buffer and must be flushed
 from here.
 """
 
-import asyncio
-import logging
 from datetime import datetime, timezone
 
 from app.config import db as db_module
-from app.config.settings import settings
 from app.repositories import run_repository
 from app.services import ingest_service
-
-log = logging.getLogger(__name__)
 
 
 async def sweep_abandoned(now: datetime | None = None) -> int:
@@ -29,14 +25,3 @@ async def sweep_abandoned(now: datetime | None = None) -> int:
             await ingest_service.end_live_stream(run)
     return len(stale)
 
-
-async def run_forever() -> None:
-    interval = settings.abandon_sweep_interval_seconds
-    while True:
-        await asyncio.sleep(interval)
-        try:
-            count = await sweep_abandoned()
-            if count:
-                log.info("marked %d run(s) abandoned", count)
-        except Exception:
-            log.exception("abandoned-run sweep failed; will retry next interval")

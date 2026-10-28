@@ -12,7 +12,7 @@ from app.utils.security import hash_password
 from app.config.db import SessionLocal
 from app.repositories import trace_blob_repository, user_repository
 from app.routes import api_keys, auth, ingest, live, members, projects, runs, sessions
-from app.services import abandon_service
+from app.services import maintenance_service
 
 
 @asynccontextmanager
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
                 status="active",
             )
             await db.commit()
-    sweep = asyncio.create_task(abandon_service.run_forever()) if settings.abandon_sweep_interval_seconds > 0 else None
+    sweep = asyncio.create_task(maintenance_service.run_forever()) if settings.abandon_sweep_interval_seconds > 0 else None
     try:
         yield
     finally:
@@ -47,6 +47,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],  # read cross-origin by the dashboard for pagination
 )
 
 for router in (auth.router, sessions.router, projects.router, members.router, api_keys.router, ingest.router, runs.router, live.router):

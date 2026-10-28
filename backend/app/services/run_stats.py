@@ -1,5 +1,5 @@
 """Pure functions that turn a run's orkes edge events into the numbers stored on `runs` and
-`node_stats`. No I/O, so they're unit-tested directly (tests/unit/test_run_stats.py).
+`run_node_stats`. No I/O, so they're unit-tested directly (tests/unit/test_run_stats.py).
 Field meanings: working_context/INTEGRATION_AGREEMENT.md §2.5."""
 
 from dataclasses import dataclass

@@ -16,7 +16,7 @@ export function ProjectBreadcrumb({ project, pageTitle }: { project: Project | u
   const navigate = useNavigate()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'color-mix(in srgb, var(--color-text) 45%, transparent)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--c-text-faint)' }}>
         <button className="btn btn-ghost" style={{ fontSize: 12, padding: 0 }} onClick={() => navigate('/projects')}>
           Projects
         </button>

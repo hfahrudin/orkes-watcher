@@ -56,10 +56,22 @@ async def process_batch(db: AsyncSession, key: ApiKey, batch: IngestBatch) -> No
         else:
             await live_registry.publish(run_id_str, event.model_dump(mode="json"))
 
+    if not finalized:
+        _update_running_counts(run, live_registry.buffer(run_id_str))
+
     await db.commit()
     if finalized:
         # Only after the commit: viewers re-fetch the run as soon as they see `done`.
         await end_live_stream(run)
+
+
+def _update_running_counts(run: Run, buffer: list[dict]) -> None:
+    """Keeps the list view's counts current while the run streams; run_end recomputes them.
+    max() so a backend restart (which empties the in-memory buffer) can't shrink them."""
+    stats = compute_run_stats(buffer)
+    run.node_count = max(run.node_count, stats.node_count)
+    run.edge_count = max(run.edge_count, stats.edge_count)
+    run.loop_count = max(run.loop_count, stats.loop_count)
 
 
 async def _finalize(db: AsyncSession, project: Project, run: Run, event: RunEndEvent) -> None:
@@ -121,8 +133,7 @@ async def close_run(
         failed_node=failed_node,
     )
 
-    await node_stat_repository.upsert_many(db, project.id, stats.node_durations)
-    await node_stat_repository.bump_run_counts(db, project.id, set(stats.visited_nodes))
+    await node_stat_repository.save_for_run(db, project.id, run.id, stats.node_durations)
 
     # Sampling applies at finalize, not ingest start — the outcome isn't known until now,
     # and failures are never sampled away. See DATABASE.md.

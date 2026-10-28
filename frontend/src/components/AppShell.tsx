@@ -20,6 +20,24 @@ const ADMIN_NAV: { to: string; label: string; icon: string; roles: ('admin' | 'd
   { to: 'members', label: 'Access', icon: 'ph-users-three', roles: ['admin'] },
 ]
 
+// Sidebar collapsed to an icon strip, remembered per browser. Storage can throw or be empty
+// (private windows, blocked site data); the sidebar then just starts expanded.
+const COLLAPSED_KEY = 'orkes-sidebar-collapsed'
+function loadCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function saveCollapsed(collapsed: boolean) {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
+  } catch {
+    // not saved; applies until the page reloads
+  }
+}
+
 function initials(name: string) {
   return name
     .split(' ')
@@ -37,6 +55,14 @@ export function AppShell() {
   const [projects, setProjects] = useState<Project[]>([])
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState<WatcherVersion | null>(null)
+  const [collapsed, setCollapsed] = useState(loadCollapsed)
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      saveCollapsed(!c)
+      return !c
+    })
+  // Collapsed, each item shows only its icon, so its label becomes the tooltip.
+  const tip = (label: string) => (collapsed ? label : undefined)
 
   function loadProjects() {
     setError(null)
@@ -55,14 +81,25 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <NavLink to="/projects" className="brand">
-          <BrandLockup />
-        </NavLink>
+      <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
+        <div className="sidebar-top">
+          <NavLink to="/projects" className="brand sidebar-brand" title={tip('Orkes Watcher')}>
+            <BrandLockup size={collapsed ? 34 : 38} />
+          </NavLink>
+          <button
+            className="sidebar-toggle"
+            onClick={toggleCollapsed}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+          >
+            <i className={`ph ${collapsed ? 'ph-caret-double-right' : 'ph-caret-double-left'}`} />
+          </button>
+        </div>
 
-        <NavLink to="/projects" className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
+        <NavLink to="/projects" title={tip('All projects')} className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
           <i className="ph ph-folders" />
-          All projects
+          <span className="label">All projects</span>
         </NavLink>
 
         {error && (
@@ -74,15 +111,15 @@ export function AppShell() {
 
         {current && (
           <>
-            <div className="project-indicator">
+            <div className="project-indicator" title={tip(current.name)}>
               <span className="dot" />
               <span>{current.name}</span>
             </div>
             <nav className="nav-group">
               {PROJECT_NAV.map((item) => (
-                <NavLink key={item.to} to={`/${current.id}/${item.to}`} className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
+                <NavLink key={item.to} to={`/${current.id}/${item.to}`} title={tip(item.label)} className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
                   <i className={`ph ${item.icon}`} />
-                  {item.label}
+                  <span className="label">{item.label}</span>
                 </NavLink>
               ))}
             </nav>
@@ -93,27 +130,27 @@ export function AppShell() {
           <nav className="nav-group">
             {hasRole('admin') && <div className="nav-label">Admin</div>}
             {ADMIN_NAV.filter((item) => hasRole(...item.roles)).map((item) => (
-              <NavLink key={item.to} to={`/${adminTarget.id}/${item.to}`} className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
+              <NavLink key={item.to} to={`/${adminTarget.id}/${item.to}`} title={tip(item.label)} className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
                 <i className={`ph ${item.icon}`} />
-                {item.label}
+                <span className="label">{item.label}</span>
               </NavLink>
             ))}
           </nav>
         )}
 
         <div className="sidebar-footer">
-          <button className="themebtn" onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}>
+          <button className="themebtn" title={tip(resolved === 'dark' ? 'Light mode' : 'Dark mode')} onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}>
             <i className={`ph ${resolved === 'dark' ? 'ph-sun' : 'ph-moon'}`} />
-            {resolved === 'dark' ? 'Light mode' : 'Dark mode'}
+            <span className="label">{resolved === 'dark' ? 'Light mode' : 'Dark mode'}</span>
           </button>
           <div className="sdk-status" title="The orkes trace contract versions this watcher accepts">
             {version ? `Watcher ${version.watcher_version} · contract ${version.contract.latest}` : 'Watcher version unavailable'}
           </div>
-          <button className="sideitem" style={{ color: 'var(--c-muted)', fontSize: 11.5 }} onClick={async () => { await logout(); navigate('/login') }}>
-            <i className="ph ph-sign-out" style={{ fontSize: 13 }} />
-            Sign out
+          <button className="sideitem sign-out" title={tip('Sign out')} style={{ color: 'var(--c-muted)' }} onClick={async () => { await logout(); navigate('/login') }}>
+            <i className="ph ph-sign-out" />
+            <span className="label">Sign out</span>
           </button>
-          <NavLink to="/account" className={({ isActive }) => `sideitem account-row${isActive ? ' active' : ''}`}>
+          <NavLink to="/account" title={tip(user ? `${user.name} · account` : 'Account')} className={({ isActive }) => `sideitem account-row${isActive ? ' active' : ''}`}>
             <span className="account-avatar">{user ? initials(user.name) : ''}</span>
             <div className="account-meta">
               <span>{user?.name}</span>

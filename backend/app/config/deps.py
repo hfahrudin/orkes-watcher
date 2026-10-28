@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -18,8 +19,9 @@ async def get_current_session(
 ) -> Session:
     if not session_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
-    session = await session_repository.get_by_id(db, session_token)
+    session = await session_repository.get_valid(db, session_token)
     if not session:
+        await db.commit()  # keeps the deletion of an expired session
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired or revoked")
     await session_repository.touch(db, session)
     return session
@@ -77,6 +79,8 @@ async def get_api_key(request: Request, db: AsyncSession = Depends(get_db)) -> A
     prefix, secret = parsed
     key = await api_key_repository.get_by_prefix(db, prefix)
     if not key or key.scope == "revoked" or not verify_api_key_secret(secret, key.secret_hash):
+        # The prefix identifies the key without exposing its secret.
+        logging.getLogger("orkes_watcher.ingest").warning("ingest rejected 401: key=%s is unknown, revoked or has the wrong secret", prefix)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or revoked API key")
     # Shown as "Last used" on the API keys page. Written at most once a minute so a busy
     # sink doesn't add a row update to every batch; saved when the request commits.

@@ -12,7 +12,8 @@ export interface Project {
   id: string
   name: string
   env: 'production' | 'staging' | 'local'
-  retentionDays: number
+  /** null = traces are never deleted. */
+  retentionDays: number | null
   samplingPct: number
   /** A running run with no new batch for this long is marked failed ("abandoned"). */
   abandonAfterMinutes: number
@@ -37,6 +38,8 @@ export interface Run {
   graphDescription: string | null
   contractVersion: string | null
   sdkVersion: string | null
+  /** Last time any batch arrived for this run. */
+  lastEventAt: string | null
   /** Only on GET /runs/:id. The graph's full node list from orkes, or null if the batch
    * carrying it was lost — then nodes are inferred from the edges. */
   graphNodes?: GraphNode[] | null

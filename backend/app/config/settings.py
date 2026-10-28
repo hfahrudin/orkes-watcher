@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,9 @@ class Settings(BaseSettings):
     minio_bucket: str = "orkes-traces"
 
     session_cookie_name: str = "orkes_session"
+    # Absolute lifetime of a sign-in, enforced on the server: a session older than this is
+    # rejected and deleted however recently it was used. Also the cookie's lifetime.
+    session_lifetime_days: int = Field(default=30, ge=1)
     # False by default for local HTTP dev — a Secure cookie set over plain http:// is
     # rejected or never sent back by most browsers. Set true once this actually sits
     # behind HTTPS (see ORKES_COOKIE_SECURE in docker-compose.yml/.env.example).

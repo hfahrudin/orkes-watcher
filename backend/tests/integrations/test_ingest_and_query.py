@@ -127,7 +127,8 @@ async def test_full_ingest_finalizes_run_and_computes_stats(admin_client: AsyncC
     # node_elapsed (0.3s), not the edge's elapsed (0.4s, which includes the gate)
     assert node_by_name["classify"]["totalDurationUs"] == 300_000
     assert stats["slowestNodes"][0]["nodeName"] == "answer"
-    assert len(stats["hourlyBars"]) == 24
+    assert len(stats["timeline"]) == 24 and stats["bucketSeconds"] == 3600
+    assert sum(b["ok"] for b in stats["timeline"]) == 1
 
 
 async def test_run_list_does_not_include_node_list(admin_client: AsyncClient):
@@ -197,6 +198,22 @@ async def test_parallel_edge_counts_branches_and_uses_node_elapsed(admin_client:
     stats = (await admin_client.get(f"/projects/{project_id}/stats")).json()
     split = next(n for n in stats["slowestNodes"] if n["nodeName"] == "split")
     assert split["totalDurationUs"] == 100_000
+
+
+async def test_running_run_counts_update_per_batch(admin_client: AsyncClient):
+    """The traces list reads these columns, so they must reflect steps streamed so far,
+    not stay 0 until run_end."""
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    run_id = str(uuid.uuid4())
+    await ingest(admin_client, secret, batch(run_id, [edge("e1", 1, "START", "a"), edge("e2", 2, "a", "b")]))
+    await ingest(admin_client, secret, batch(run_id, [edge("e3", 3, "b", "a"), edge("e2", 4, "a", "b")]))
+
+    run = (await admin_client.get(f"/runs/{run_id}")).json()
+    assert run["status"] == "running"
+    assert (run["nodeCount"], run["edgeCount"], run["loopCount"]) == (3, 4, 1)
+
+    stats = (await admin_client.get(f"/projects/{project_id}/stats")).json()
+    assert (stats["totalEdgeTraversals"], stats["totalLoopReentries"]) == (4, 1)
 
 
 async def test_failed_run_stores_error_and_failednode(admin_client: AsyncClient):
@@ -537,3 +554,139 @@ async def test_api_key_last_used_is_recorded(admin_client: AsyncClient):
     await ingest(admin_client, secret, batch(str(uuid.uuid4()), []))
     keys = (await admin_client.get(f"/projects/{project_id}/keys")).json()
     assert any(k["lastUsedAt"] is not None for k in keys)
+
+
+# --- runs list: pagination and server-side filters ------------------------------------
+
+
+async def test_runs_list_reports_total_for_pagination(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    for i in range(5):
+        status = "FAILED" if i < 2 else "FINISHED"
+        await ingest(admin_client, secret, batch(str(uuid.uuid4()), [run_end(status, error="x" if i < 2 else None)]))
+
+    r = await admin_client.get(f"/projects/{project_id}/runs?limit=2&offset=0")
+    assert r.headers["x-total-count"] == "5" and len(r.json()) == 2
+    r = await admin_client.get(f"/projects/{project_id}/runs?limit=2&offset=4")
+    assert r.headers["x-total-count"] == "5" and len(r.json()) == 1
+    r = await admin_client.get(f"/projects/{project_id}/runs?status=failed&limit=1")
+    assert r.headers["x-total-count"] == "2" and len(r.json()) == 1
+
+
+async def test_runs_list_pages_dont_overlap_or_skip(admin_client: AsyncClient):
+    """Runs share a started_at when run_end has no SDK times; ordering must still be stable."""
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    for _ in range(7):
+        await ingest(admin_client, secret, batch(str(uuid.uuid4()), []))
+    seen = []
+    for offset in range(0, 7, 3):
+        seen += [r["id"] for r in (await admin_client.get(f"/projects/{project_id}/runs?limit=3&offset={offset}")).json()]
+    assert len(seen) == len(set(seen)) == 7
+
+
+async def test_runs_search_matches_id_or_graph_case_insensitively(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    run_id = str(uuid.uuid4())
+    await ingest(admin_client, secret, batch(run_id, []))
+    for term in ("SUPPORT", "triage", run_id[:8], run_id[:8].upper()):
+        r = await admin_client.get(f"/projects/{project_id}/runs", params={"search": term})
+        assert [x["id"] for x in r.json()] == [run_id], term
+
+
+async def test_runs_search_treats_wildcards_literally(admin_client: AsyncClient):
+    """QA regression (B9): '%' matched every run."""
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    await ingest(admin_client, secret, batch(str(uuid.uuid4()), []))
+    for term in ("%", "_", "support%triage"):
+        r = await admin_client.get(f"/projects/{project_id}/runs", params={"search": term})
+        assert r.json() == [] and r.headers["x-total-count"] == "0", term
+
+
+async def test_runs_list_rejects_unknown_status(admin_client: AsyncClient):
+    project_id, _ = await project_and_ingest_secret(admin_client)
+    assert (await admin_client.get(f"/projects/{project_id}/runs?status=bogus")).status_code == 422
+
+
+# --- dashboard widgets ----------------------------------------------------------------
+
+
+async def _fail(admin_client, secret, error: str, node: str | None, elapsed: float = 1.0) -> str:
+    run_id = str(uuid.uuid4())
+    await ingest(admin_client, secret, batch(run_id, [edge("e", 1, "START", node or "a"), run_end("FAILED", elapsed_time=elapsed, error=error, failed_node=node)]))
+    return run_id
+
+
+async def test_dashboard_top_errors_and_failing_nodes(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    for _ in range(3):
+        await _fail(admin_client, secret, "KeyError: 'intent'\nTraceback ...", "classify")
+    latest = await _fail(admin_client, secret, "TimeoutError: llm\nTraceback ...", "answer")
+    await ingest(admin_client, secret, batch(str(uuid.uuid4()), [edge("e", 1, "START", "a")]))  # will be abandoned
+    await abandon_service.sweep_abandoned(datetime.now(timezone.utc) + timedelta(minutes=31))
+
+    stats = (await admin_client.get(f"/projects/{project_id}/stats")).json()
+    errors = {e["message"]: e for e in stats["topErrors"]}
+    assert errors["KeyError: 'intent'"]["count"] == 3  # grouped by first line only
+    assert errors["TimeoutError: llm"]["sampleRunId"] == latest
+    assert errors["abandoned: no run_end received"]["count"] == 1
+    assert stats["failuresByNode"][0] == {"nodeName": "classify", "count": 3}
+    assert stats["failuresWithoutNode"] == 1  # the abandoned run
+    assert stats["live"]["abandonedInRange"] == 1
+
+    # Each widget row links to the matching runs.
+    r = await admin_client.get(f"/projects/{project_id}/runs", params={"error": "KeyError: 'intent'"})
+    assert r.headers["x-total-count"] == "3"
+    r = await admin_client.get(f"/projects/{project_id}/runs", params={"failedNode": "answer"})
+    assert [x["id"] for x in r.json()] == [latest]
+
+
+async def test_dashboard_live_now_ignores_range_but_respects_graph(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    running = str(uuid.uuid4())
+    await ingest(admin_client, secret, batch(running, [edge("e", 1, "START", "a")]))
+    stats = (await admin_client.get(f"/projects/{project_id}/stats?range=1h")).json()
+    assert stats["live"]["runningCount"] == 1 and stats["live"]["running"][0]["id"] == running
+    stats = (await admin_client.get(f"/projects/{project_id}/stats?graph=other-graph")).json()
+    assert stats["live"]["runningCount"] == 0
+
+
+async def test_dashboard_duration_percentiles_per_bucket(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    for seconds in (1, 2, 3, 4, 10):
+        await ingest(admin_client, secret, batch(str(uuid.uuid4()), [run_end(elapsed_time=seconds)]))
+    stats = (await admin_client.get(f"/projects/{project_id}/stats")).json()
+    filled = [b for b in stats["timeline"] if b["p50Us"] is not None]
+    assert len(filled) == 1
+    assert filled[0]["p50Us"] == 3_000_000 and 8_000_000 < filled[0]["p95Us"] <= 10_000_000
+    assert all(b["p95Us"] is None for b in stats["timeline"] if b not in filled)
+
+
+async def test_dashboard_filters_by_graph_and_range(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    other = batch(str(uuid.uuid4()), [run_end()])
+    other["graph_name"] = "other-graph"
+    await ingest(admin_client, secret, other)
+    await ingest(admin_client, secret, batch(str(uuid.uuid4()), happy_path_events()))
+    stats = (await admin_client.get(f"/projects/{project_id}/stats?graph=other-graph")).json()
+    assert sum(stats["byOutcome"].values()) == 1 and stats["slowestNodes"] == []
+    assert stats["graphNames"] == ["other-graph", "support-triage"]
+    stats = (await admin_client.get(f"/projects/{project_id}/stats?range=30d")).json()
+    assert len(stats["timeline"]) == 30 and stats["bucketSeconds"] == 86400
+    assert (await admin_client.get(f"/projects/{project_id}/stats?range=1y")).status_code == 422
+
+
+# --- rejected batches are logged -------------------------------------------------------
+
+
+async def test_rejected_batch_is_logged_with_reason(admin_client: AsyncClient, caplog):
+    import logging
+
+    _, secret = await project_and_ingest_secret(admin_client)
+    run_id = str(uuid.uuid4())
+    bad = batch(run_id, [edge("e", 1, "a", "b", elapsed=-1)])
+    with caplog.at_level(logging.WARNING, logger="orkes_watcher.ingest"):
+        await ingest(admin_client, secret, bad, expect=422)
+        await admin_client.post("/ingest/events", headers=auth("ok_live_deadbeef_nope"), json=bad)
+    lines = [r.getMessage() for r in caplog.records if r.name == "orkes_watcher.ingest"]
+    assert any("ingest rejected 422" in l and run_id in l and "elapsed" in l and "sdk=orkes/0.1.4" in l for l in lines), lines
+    assert any("ingest rejected 401" in l and "ok_live_deadbeef" in l for l in lines), lines
