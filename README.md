@@ -21,21 +21,33 @@ at a project's ingest endpoint, and every run becomes an inspectable, live-updat
 
 ## See it in action
 
-**Live runs**: watch a run unfold step by step, with the node running right now highlighted.
+<details>
+<summary><b>Live runs</b>: watch a run unfold step by step, with the node running right now highlighted.</summary>
 
 <p align="center"><img width="800" height="500" alt="Runs list with a running run, then its graph filling in step by step while the current node is highlighted" src="https://github.com/user-attachments/assets/38cdddd6-5460-44b8-8024-4e19a8ca846e" /></p>
 
-**Trace inspector**: every node, edge, loop and state snapshot of a run.
+</details>
+
+<details>
+<summary><b>Trace inspector</b>: every node, edge, loop and state snapshot of a run.</summary>
 
 <p align="center"><img width="800" height="500" alt="Trace inspector: a run's graph with a node selected, showing its timings, state and LLM calls" src="https://github.com/user-attachments/assets/06de6d31-95e3-4288-9c83-783fd9ec7ab1" /></p>
 
-**Dashboard**: outcomes over time, run time percentiles, slowest nodes and top errors.
+</details>
+
+<details>
+<summary><b>Dashboard</b>: outcomes over time, run time percentiles, slowest nodes and top errors.</summary>
 
 <p align="center"><img width="800" height="500" alt="Dashboard with run outcomes, duration percentiles, slowest nodes and top errors" src="https://github.com/user-attachments/assets/58b0d3a8-c717-40f6-bbab-a2be1d14feba" /></p>
 
-**Teams and themes**: roles and per-project access, in light and dark mode.
+</details>
+
+<details>
+<summary><b>Teams and themes</b>: roles and per-project access, in light and dark mode.</summary>
 
 <p align="center"><img width="800" height="500" alt="Access page with admin, developer and viewer roles, then switching to the dark theme" src="https://github.com/user-attachments/assets/98a8cd4d-4cd9-4ba9-b1a3-91d6812ca1d9" /></p>
+
+</details>
 
 ## Getting Started
 
