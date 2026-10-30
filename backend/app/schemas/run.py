@@ -27,9 +27,11 @@ class RunOut(CamelModel):
 
 
 class RunDetailOut(RunOut):
-    """GET /runs/:id only — adds the graph's node list, which can be large."""
+    """GET /runs/:id only — adds the graph's node list and final state, which can be large."""
 
     graph_nodes: list[dict[str, Any]] | None
+    # Graph state when the run ended; may be a {"_truncated": true, "size": N} marker.
+    final_state: Any = None
 
 
 class NodeStatOut(CamelModel):

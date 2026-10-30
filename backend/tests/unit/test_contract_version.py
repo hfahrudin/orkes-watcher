@@ -1,4 +1,4 @@
-"""Contract version parsing and the values /version reports (INTEGRATION_AGREEMENT.md §2.8)."""
+"""Contract version parsing and the values /version reports (docs/contracts/contract-1.0.md §2.8)."""
 
 import re
 

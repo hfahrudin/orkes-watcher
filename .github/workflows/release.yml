@@ -1,0 +1,148 @@
+# Every push to main publishes a GitHub release with a new version.
+#
+# The next version comes from the commit messages since the last release tag
+# (conventional commits, as this repo already uses):
+#   feat!: / fix!: / "BREAKING CHANGE"  -> major (minor while still on 0.x)
+#   feat:                               -> minor
+#   anything else                       -> patch
+# The first run has no tag to compare with, so it releases the version already in
+# backend/pyproject.toml. If someone bumped that file by hand past the computed version,
+# the hand-set version wins.
+#
+# The version is written back to backend/pyproject.toml (which the app reports at /version
+# and in the sidebar), backend/uv.lock and frontend/package*.json, and the release's changelog
+# to docs/changelogs/X.Y.Z.md (shown in the app, and used as the release notes), all in one
+# "chore(release): vX.Y.Z" commit, which is then tagged and released.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# Two quick pushes must not compute the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Pushes made with GITHUB_TOKEN don't start workflows, so the release commit can't
+    # loop; this also skips it if the commit is ever pushed some other way.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and full history, to find the last release
+
+      - name: Work out the next version
+        id: version
+        run: |
+          set -euo pipefail
+          current=$(sed -nE 's/^version = "([^"]+)"/\1/p' backend/pyproject.toml | head -1)
+          last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null || true)
+
+          if [ -z "$last_tag" ]; then
+            next=$current
+            range=HEAD
+          else
+            if [ -z "$(git log --format=%H "$last_tag..HEAD")" ]; then
+              echo "Nothing new since $last_tag; no release."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            range="$last_tag..HEAD"
+            log=$(git log --format='%s%n%b' "$range")
+            IFS=. read -r major minor patch <<< "${last_tag#v}"
+            if grep -qE '^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE' <<< "$log"; then
+              if [ "$major" -eq 0 ]; then minor=$((minor + 1)); patch=0
+              else major=$((major + 1)); minor=0; patch=0; fi
+            elif grep -qE '^feat(\([^)]*\))?:' <<< "$log"; then
+              minor=$((minor + 1)); patch=0
+            else
+              patch=$((patch + 1))
+            fi
+            next="$major.$minor.$patch"
+            # A version bumped by hand in pyproject.toml beats the computed one.
+            next=$(printf '%s\n%s\n' "$next" "$current" | sort -V | tail -1)
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$next" >/dev/null; then
+            echo "::error::Tag v$next already exists. Bump backend/pyproject.toml past it, or delete the tag."
+            exit 1
+          fi
+
+          echo "Releasing v$next (previous: ${last_tag:-none})"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+
+      - name: Write the changelog
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RANGE: ${{ steps.version.outputs.range }}
+        run: |
+          set -euo pipefail
+          # docs/changelogs/<version>.md is shown in the app (sidebar "Watcher X.Y.Z") and used
+          # as the GitHub release notes. A file written by hand before the release is kept.
+          file="docs/changelogs/$VERSION.md"
+          if [ ! -f "$file" ]; then
+            contract=$(sed -nE 's/^LATEST_CONTRACT = "([^"]+)"/\1/p' backend/app/config/version.py)
+            mkdir -p docs/changelogs
+            {
+              echo "# Watcher $VERSION"
+              echo
+              echo "Released $(date -u +%Y-%m-%d). Accepts orkes trace contract [$contract](../contracts/contract-$contract.md)."
+              echo
+              echo "## Changes"
+              echo
+              git log --no-merges --format='- %s (%h)' "$RANGE" | grep -v '^- chore(release):' || echo "- Maintenance release."
+            } > "$file"
+          fi
+          # Release notes: the same file, with links made absolute so they work on GitHub.
+          sed -E "s#\]\(\.\./#](https://github.com/${{ github.repository }}/blob/v$VERSION/docs/#g" "$file" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.skip != 'true'
+        with:
+          node-version: 20
+
+      - name: Write the version into the repo
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          sed -i -E "0,/^version = \".*\"/s//version = \"$VERSION\"/" backend/pyproject.toml
+          # The backend's own entry in uv.lock (not its dependencies').
+          sed -i -E "/^name = \"orkes-watcher-backend\"$/{n;s/^version = \".*\"/version = \"$VERSION\"/}" backend/uv.lock
+          (cd frontend && npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null)
+          git diff --stat
+
+      - name: Commit, tag and push
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A backend/pyproject.toml backend/uv.lock frontend/package.json frontend/package-lock.json docs/changelogs
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): v$VERSION"
+          fi
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "HEAD:main"
+          git push origin "v$VERSION"
+
+      - name: Create the GitHub release
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "v$VERSION" --title "v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag

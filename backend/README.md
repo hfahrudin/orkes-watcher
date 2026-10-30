@@ -66,7 +66,7 @@ live in that process's memory until the run ends.
 ## Ingest contract
 
 `POST /ingest/events` accepts the orkes trace contract **1.0**, defined in
-`working_context/INTEGRATION_AGREEMENT.md` §2 (orkes is the master; the watcher follows its
+[`docs/contracts/contract-1.0.md`](../docs/contracts/contract-1.0.md) §2 (orkes is the master; the watcher follows its
 field names, units and status strings). `GET /version` (no auth) reports the watcher version
 and the contract majors it accepts. Trace events are stored and returned exactly as orkes
 sent them (snake_case); the rest of the dashboard API is camelCase.
@@ -84,7 +84,7 @@ docker compose exec backend python -m scripts.seed_example_traces
 
 Creates (or reuses) a `support-triage` project and seeds it with a few realistic traces —
 a happy path with a parallel branch, a retry loop that escalates, a crash in a routing gate,
-and a minimal one-shot success. See `working_context/INTEGRATION_AGREEMENT.md`.
+and a minimal one-shot success. See [`docs/contracts/contract-1.0.md`](../docs/contracts/contract-1.0.md).
 
 ## Tests
 

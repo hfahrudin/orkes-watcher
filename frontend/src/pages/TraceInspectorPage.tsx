@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import * as api from '../lib/api'
 import { ErrorState } from '../components/ErrorState'
 import { StatusBadge } from '../components/StatusBadge'
+import { downloadFile, runExportJson, slug, timestampForFile } from '../lib/export'
 import { formatDateTime, formatDuration } from '../lib/format'
 import {
   destinations,
@@ -162,6 +163,7 @@ export function TraceInspectorPage() {
   const [viewMode, setViewMode] = useState<'graph' | 'timeline' | 'raw'>('graph')
   const [legendOpen, setLegendOpen] = useState(false)
   const [stateOpen, setStateOpen] = useState(true)
+  const [finalOpen, setFinalOpen] = useState(true)
   const [tracebackOpen, setTracebackOpen] = useState(false)
   const [liveLost, setLiveLost] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -468,6 +470,14 @@ export function TraceInspectorPage() {
             <label className="seg-opt"><input type="radio" name="gv" checked={viewMode === 'timeline'} onChange={() => setViewMode('timeline')} /><i className="ph ph-rows" />Timeline</label>
             <label className="seg-opt"><input type="radio" name="gv" checked={viewMode === 'raw'} onChange={() => setViewMode('raw')} /><i className="ph ph-brackets-curly" />Raw</label>
           </div>
+          <button
+            className="btn btn-secondary"
+            title="Download this run, its final state and its events as JSON"
+            onClick={() => downloadFile(`orkes-run-${slug(run.graphName)}-${run.id.slice(0, 8)}-${timestampForFile()}.json`, runExportJson(run, events), 'application/json')}
+          >
+            <i className="ph ph-download-simple" />
+            Export
+          </button>
           <button className="btn btn-secondary" disabled title="Replay isn't implemented yet.">
             <i className="ph ph-arrow-counter-clockwise" />
             Replay
@@ -720,6 +730,10 @@ export function TraceInspectorPage() {
             />
           )}
 
+          {run.status !== 'running' && (
+            <FinalState status={run.status} value={run.finalState ?? null} open={finalOpen} onToggle={() => setFinalOpen((v) => !v)} />
+          )}
+
           {(selectedEdge || selectedNode) && (
             <div style={{ marginTop: 'auto', display: 'flex', gap: 8, paddingTop: 6 }}>
               <button
@@ -794,6 +808,31 @@ function TruncatedNote({ size }: { size: number }) {
     <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
       <i className="ph ph-scissors" /> truncated ({formatBytes(size)}): too large for orkes to send
     </p>
+  )
+}
+
+/** The run's state when it ended (run_end.final_state), shown like an edge's state_snapshot. */
+function FinalState({ status, value, open, onToggle }: { status: Run['status']; value: unknown; open: boolean; onToggle: () => void }) {
+  const failed = status === 'failed'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ height: 1, background: 'var(--color-divider)' }} />
+      <button className="sideitem" onClick={onToggle} style={{ padding: 0, gap: 7, color: 'var(--c-text)' }}>
+        <i className={`ph ${open ? 'ph-minus-square' : 'ph-plus-square'}`} style={{ fontSize: 12, color: failed ? 'var(--color-danger)' : 'var(--color-accent)' }} />
+        <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{failed ? 'State at failure' : 'Output'}</span>
+        <span className="text-muted" style={{ marginLeft: 'auto', fontSize: 10.5, textTransform: 'none' }}>{failed ? 'when the run failed' : 'after the last node ran'}</span>
+      </button>
+      {open &&
+        (value === null ? (
+          <p className="text-muted" style={{ fontSize: 12, margin: 0 }} title="Older orkes versions don't send it, and abandoned runs never sent run_end.">
+            Not recorded
+          </p>
+        ) : isTruncated(value) ? (
+          <TruncatedNote size={value.size} />
+        ) : (
+          <Json value={value} />
+        ))}
+    </div>
   )
 }
 

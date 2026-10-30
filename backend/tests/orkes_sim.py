@@ -1,5 +1,5 @@
 """A stand-in for orkes's WatcherSink, used to test the watcher the way a real orkes run
-will drive it (working_context/INTEGRATION_AGREEMENT.md §1.1, §2.2).
+will drive it (docs/contracts/contract-1.0.md §1.1, §2.2).
 
 orkes calls the sink at three points: on_run_start (node list known, no edges yet),
 on_edge (after each EdgeTrace is appended — so a parallel edge's branches come before

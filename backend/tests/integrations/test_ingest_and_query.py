@@ -1,5 +1,5 @@
 """Ingest + query tests against the orkes trace contract 1.0
-(working_context/INTEGRATION_AGREEMENT.md §2)."""
+(docs/contracts/contract-1.0.md §2)."""
 
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -360,6 +360,47 @@ async def test_extra_and_truncated_fields_survive(admin_client: AsyncClient):
     assert stored[0]["llm_traces"] == truncated
 
 
+# --- final state -----------------------------------------------------------------------
+
+
+async def test_run_end_without_final_state_closes_run_as_before(admin_client: AsyncClient):
+    """An older orkes doesn't send final_state."""
+    _, secret = await project_and_ingest_secret(admin_client)
+    run_id = str(uuid.uuid4())
+    assert "final_state" not in run_end()
+    await ingest(admin_client, secret, batch(run_id, [edge("e", 1, "a", "b"), run_end()]))
+    run = (await admin_client.get(f"/runs/{run_id}")).json()
+    assert run["status"] == "finished"
+    assert run["finalState"] is None
+
+
+async def test_final_state_is_stored_and_returned(admin_client: AsyncClient):
+    _, secret = await project_and_ingest_secret(admin_client)
+    for final_state in ({"n": 2}, {"_truncated": True, "size": 400_000}, None):
+        run_id = str(uuid.uuid4())
+        await ingest(admin_client, secret, batch(run_id, [edge("e", 1, "a", "b"), run_end(final_state=final_state)]))
+        assert (await admin_client.get(f"/runs/{run_id}")).json()["finalState"] == final_state
+
+
+async def test_failed_run_keeps_state_at_failure(admin_client: AsyncClient):
+    _, secret = await project_and_ingest_secret(admin_client)
+    run_id = str(uuid.uuid4())
+    end = run_end("FAILED", error="KeyError: 'intent'", failed_node="classify", final_state={"input": "???", "intent": None})
+    await ingest(admin_client, secret, batch(run_id, [edge("e", 1, "START", "classify"), end]))
+    run = (await admin_client.get(f"/runs/{run_id}")).json()
+    assert run["status"] == "failed"
+    assert run["finalState"] == {"input": "???", "intent": None}
+
+
+async def test_runs_list_and_dashboard_leave_out_final_state(admin_client: AsyncClient):
+    project_id, secret = await project_and_ingest_secret(admin_client)
+    await ingest(admin_client, secret, batch(str(uuid.uuid4()), [edge("e", 1, "a", "b"), run_end(final_state={"n": 2})]))
+    runs = (await admin_client.get(f"/projects/{project_id}/runs")).json()
+    assert "finalState" not in runs[0]
+    stats = (await admin_client.get(f"/projects/{project_id}/stats")).json()
+    assert "finalState" not in stats["latestTraces"][0]
+
+
 # --- abandoned runs --------------------------------------------------------------------
 
 
@@ -388,6 +429,7 @@ async def test_stale_running_run_is_marked_abandoned(admin_client: AsyncClient):
     assert run["status"] == "failed"
     assert run["error"] == "abandoned: no run_end received"
     assert run["loopCount"] == 1  # stats still computed from what did arrive
+    assert run["finalState"] is None  # no run_end, so no final state
     stored = (await admin_client.get(f"/runs/{stale_id}/events")).json()
     assert len(stored) == 2  # failed runs are always flushed to the blob
 

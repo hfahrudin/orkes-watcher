@@ -136,6 +136,7 @@ export async function countRuns(projectId: string): Promise<number> {
   return (await listRunsPage(projectId, { limit: 1, offset: 0 })).total
 }
 
+/** The full run, including graphNodes and finalState (the runs list leaves those out). */
 export async function getRun(id: string): Promise<Run | undefined> {
   return getOrUndefined<Run>(`/runs/${id}`)
 }

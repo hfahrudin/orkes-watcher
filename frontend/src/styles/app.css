@@ -46,6 +46,8 @@
 
 .sidebar-footer { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 6px; }
 .sdk-status { font-size: 11px; color: var(--c-text-faint); }
+.sdk-status a { color: inherit; text-decoration: none; }
+.sdk-status a:hover { color: var(--c-accent-strong); text-decoration: underline; text-underline-offset: 2px; }
 .account-row { gap: 8px !important; padding: 6px !important; }
 .account-avatar {
   width: 26px; height: 26px; border-radius: 50%; flex: none;
@@ -60,6 +62,14 @@
    so the larger sizes apply only within the sidebar. */
 .sidebar .sideitem { font-size: 14.5px; padding: 9px 11px; gap: 11px; }
 .sidebar .sideitem .ph { font-size: 18px; }
+/* Custom SVG nav icons (components/NavIcons.tsx), sized like the Phosphor ones. */
+.navicon { width: 1em; height: 1em; flex: none; }
+.sidebar .sideitem .navicon { width: 18px; height: 18px; }
+.navicon-lg { width: 24px; height: 24px; }
+.nav-soon {
+  margin-left: auto; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.02em;
+  color: var(--c-accent-strong); background: color-mix(in srgb, var(--c-accent) 14%, transparent);
+}
 .sidebar .nav-group { gap: 3px; }
 .sidebar .nav-label { font-size: 11px; padding: 0 11px 6px; }
 .sidebar .project-indicator { padding: 0 11px 8px; gap: 8px; }
@@ -269,3 +279,26 @@
   .main > * { max-width: none; zoom: 0.72; }
   .card, table { break-inside: avoid; }
 }
+
+/* Contract and changelog pages: markdown from the repo's docs/ (DocPage). */
+.doc-version { text-decoration: none; color: inherit; padding: 5px 10px; font-size: 12px; }
+.doc-version[aria-current='page'] { color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+.doc-version:not([aria-current='page']):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.doc { font-size: 14px; line-height: 1.65; color: var(--c-text); min-width: 0; }
+.doc > :first-child { margin-top: 0; }
+.doc h1, .doc h2, .doc h3, .doc h4 { font-family: var(--font-heading); font-weight: 600; line-height: 1.3; scroll-margin-top: 16px; }
+.doc h1 { font-size: 24px; margin: 0 0 12px; }
+.doc h2 { font-size: 19px; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--color-divider); }
+.doc h3 { font-size: 15.5px; margin: 26px 0 8px; }
+.doc p, .doc ul, .doc ol { margin: 0 0 12px; }
+.doc ul, .doc ol { padding-left: 22px; }
+.doc li + li { margin-top: 4px; }
+.doc a { color: var(--c-accent-strong); text-underline-offset: 2px; }
+.doc hr { border: 0; border-top: 1px solid var(--color-divider); margin: 28px 0; }
+.doc code { font-family: var(--font-mono); font-size: 0.88em; background: var(--c-code); padding: 1px 5px; border-radius: 4px; }
+.doc pre { background: var(--c-code); border-radius: var(--radius-md); padding: 12px 14px; overflow-x: auto; margin: 0 0 14px; }
+.doc pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.55; }
+.doc table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 16px; font-size: 13px; }
+.doc th, .doc td { border: 1px solid var(--color-divider); padding: 6px 10px; text-align: left; vertical-align: top; }
+.doc th { background: var(--c-panel); font-weight: 600; }
+.doc blockquote { margin: 0 0 12px; padding: 2px 14px; border-left: 3px solid var(--c-accent); color: var(--c-text2); }

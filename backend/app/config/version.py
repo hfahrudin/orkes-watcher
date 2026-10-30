@@ -1,6 +1,6 @@
 """Watcher release version and the orkes trace contract versions this release accepts.
 
-See working_context/INTEGRATION_AGREEMENT.md §2.8 for the versioning rules.
+See docs/contracts/contract-1.0.md §2.8 for the versioning rules.
 """
 
 import tomllib

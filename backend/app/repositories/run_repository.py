@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by, insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.models.project import Project
 from app.models.run import Run
@@ -65,7 +66,8 @@ async def lock_or_create(
 
 
 async def get(db: AsyncSession, run_id: uuid.UUID) -> Run | None:
-    return await db.get(Run, run_id)
+    """The full row, including final_state (which list queries leave out)."""
+    return await db.get(Run, run_id, options=[undefer(Run.final_state)])
 
 
 def _escape_like(text: str) -> str:
@@ -118,6 +120,7 @@ async def finish(
     elapsed_us: int,
     error: str | None,
     failed_node: str | None = None,
+    final_state: object | None = None,
 ) -> Run:
     run.status = status
     run.started_at = started_at
@@ -128,6 +131,7 @@ async def finish(
     run.loop_count = loop_count
     run.elapsed_us = elapsed_us
     run.error = error
+    run.final_state = final_state
     await db.flush()
     return run
 

@@ -1,6 +1,6 @@
 """Pure functions that turn a run's orkes edge events into the numbers stored on `runs` and
 `run_node_stats`. No I/O, so they're unit-tested directly (tests/unit/test_run_stats.py).
-Field meanings: working_context/INTEGRATION_AGREEMENT.md §2.5."""
+Field meanings: docs/contracts/contract-1.0.md §2.5."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -28,7 +28,7 @@ def compute_run_stats(events: list[dict[str, Any]]) -> RunStats:
         node_count=len(visited),
         edge_count=len(edges),  # traversals, not distinct edges
         # A loop = traversing an edge already traversed in this run. Re-entering a node
-        # through a different edge isn't counted (accepted for v1, agreement §3).
+        # through a different edge isn't counted (accepted for v1, contract §3).
         loop_count=len(edge_ids) - len(set(edge_ids)),
         visited_nodes=visited,
         # node_elapsed is the source node's own run time, excluding gates and parallel

@@ -92,6 +92,7 @@ async def _finalize(db: AsyncSession, project: Project, run: Run, event: RunEndE
         finished_at=finished_at,
         error=event.error,
         failed_node=event.failed_node,
+        final_state=event.final_state,
     )
 
 
@@ -111,6 +112,7 @@ async def close_run(
     finished_at: datetime,
     error: str | None,
     failed_node: str | None,
+    final_state: object | None = None,
 ) -> None:
     """Computes the run's stats from its buffered events, stores them and flushes the trace
     blob. Shared by a normal run_end and the abandoned-run sweep. The caller commits, then
@@ -131,6 +133,7 @@ async def close_run(
         elapsed_us=max(0, int((finished_at - started_at).total_seconds() * 1_000_000)),
         error=error,
         failed_node=failed_node,
+        final_state=final_state,
     )
 
     await node_stat_repository.save_for_run(db, project.id, run.id, stats.node_durations)

@@ -1,7 +1,7 @@
 // Client-side exports: build a file from data the page already has (or can page through)
 // and hand it to the browser as a download.
 import * as api from './api'
-import type { Run } from './types'
+import type { Run, TraceEvent } from './types'
 
 /** Most runs one export will fetch (paged 500 at a time). */
 export const MAX_EXPORT_RUNS = 10_000
@@ -71,6 +71,12 @@ export function runToCsvRow(r: Run): unknown[] {
     r.nodeCount, r.edgeCount, r.loopCount,
     r.error ? r.error.split('\n')[0] : '', r.failedNode ?? '', r.sdkVersion ?? '', r.contractVersion ?? '',
   ]
+}
+
+/** One run as JSON: the run (with its final state) and its events, as the API returns them. */
+export function runExportJson(run: Run, events: TraceEvent[]): string {
+  const { finalState = null, ...rest } = run
+  return JSON.stringify({ exportedAt: new Date().toISOString(), run: { ...rest, finalState }, events }, null, 2)
 }
 
 /** The dashboard's figures as one spreadsheet-friendly CSV: labelled sections, each with

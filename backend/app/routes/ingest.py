@@ -73,7 +73,7 @@ def _log_rejection(key: ApiKey, payload, code: int, reason) -> None:
 
 @router.post("/ingest/events", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_events(request: Request, key: ApiKey = Depends(require_ingest_key), db: AsyncSession = Depends(get_db)):
-    """Contract: working_context/INTEGRATION_AGREEMENT.md §2. The body is parsed by hand so
+    """Contract: docs/contracts/contract-1.0.md §2. The body is parsed by hand so
     the size limit (413) and contract version (400) are checked before full validation:
     a payload from an unsupported contract major gets a clear 400, not a confusing 422."""
     payload_out: list = []  # filled with the parsed body once it's parsed, for the log line

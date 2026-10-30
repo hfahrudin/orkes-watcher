@@ -189,7 +189,8 @@ CREATE TABLE public.runs (
     graph_nodes jsonb,
     contract_version character varying,
     sdk_version character varying,
-    last_event_at timestamp with time zone
+    last_event_at timestamp with time zone,
+    final_state jsonb
 );
 
 

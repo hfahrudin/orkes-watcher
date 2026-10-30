@@ -121,7 +121,9 @@ def test_viewer_sees_run_status_change_from_running_to_finished(client, secret):
     for e in edges[1:]:
         send(client, secret, sink.on_edge(e))
     send(client, secret, sink.on_run_end(end))
-    assert client.get(f"/runs/{sink.run_id}").json()["status"] == "finished"
+    run = client.get(f"/runs/{sink.run_id}").json()
+    assert run["status"] == "finished"
+    assert run["finalState"] == end["final_state"]  # the run's output
 
 
 def test_viewer_of_a_crashing_run_gets_failed_status(client, secret):
@@ -140,6 +142,7 @@ def test_viewer_of_a_crashing_run_gets_failed_status(client, secret):
     run = client.get(f"/runs/{sink.run_id}").json()
     assert run["failedNode"] == "classify"
     assert run["error"].startswith("KeyError: 'intent'")
+    assert run["finalState"] == {"input": "???", "intent": None}  # state at the failure
 
 
 def test_time_based_flushes_reach_the_viewer_one_by_one(client, secret):

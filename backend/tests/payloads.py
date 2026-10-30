@@ -1,5 +1,5 @@
 """Builders for orkes trace contract 1.0 payloads, in exactly the shape orkes's
-WatcherSink sends (working_context/INTEGRATION_AGREEMENT.md §2). Shared by the
+WatcherSink sends (docs/contracts/contract-1.0.md §2). Shared by the
 integration and load tests."""
 
 import time
@@ -48,8 +48,17 @@ def edge(edge_id: str, run_number: int, from_node: str, to_node, *, edge_type: s
     }
 
 
-def run_end(status: str = "FINISHED", *, elapsed_time: float = 2.5, error: str | None = None, failed_node: str | None = None) -> dict:
-    return {"kind": "run_end", "status": status, "start_time": START_TIME, "elapsed_time": elapsed_time, "error": error, "failed_node": failed_node}
+_OMIT = object()
+
+
+def run_end(
+    status: str = "FINISHED", *, elapsed_time: float = 2.5, error: str | None = None, failed_node: str | None = None, final_state=_OMIT,
+) -> dict:
+    """final_state is left out unless given, like an older orkes that doesn't send it."""
+    event = {"kind": "run_end", "status": status, "start_time": START_TIME, "elapsed_time": elapsed_time, "error": error, "failed_node": failed_node}
+    if final_state is not _OMIT:
+        event["final_state"] = final_state
+    return event
 
 
 def batch(run_id: str, events: list[dict], *, nodes: list[dict] | None = None, description: str | None = None, contract_version: str = "1.0") -> dict:

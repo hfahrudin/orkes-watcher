@@ -1,6 +1,6 @@
 """Ingest wire format: orkes trace contract 1.0.
 
-The source of truth is working_context/INTEGRATION_AGREEMENT.md §2. orkes is the master:
+The source of truth is docs/contracts/contract-1.0.md §2. orkes is the master:
 field names, units (seconds) and status strings are orkes's own, snake_case, with no
 camelCase aliasing. The backend only reads a few fields per event (see
 ingest_service._finalize). Everything else, including fields it doesn't know about yet,
@@ -80,6 +80,9 @@ class RunEndEvent(BaseModel):
     elapsed_time: float | None = Field(default=None, ge=0, le=MAX_DURATION)
     error: str | None = None
     failed_node: str | None = None
+    # Graph state when the run ended: the output for FINISHED, the state at the failure for
+    # FAILED. Optional within 1.0 (older SDKs don't send it); may be a _truncated marker.
+    final_state: Any = None
 
 
 class UnknownEvent(PassthroughModel):

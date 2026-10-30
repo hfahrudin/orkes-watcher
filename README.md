@@ -19,6 +19,24 @@ exactly what happened: which nodes executed, which edges were traversed, how man
 loop re-entered, and what the state looked like at every step. Point an instrumented graph
 at a project's ingest endpoint, and every run becomes an inspectable, live-updating trace.
 
+## See it in action
+
+**Live runs**: watch a run unfold step by step, with the node running right now highlighted.
+
+<p align="center"><img width="800" height="500" alt="Runs list with a running run, then its graph filling in step by step while the current node is highlighted" src="https://github.com/user-attachments/assets/38cdddd6-5460-44b8-8024-4e19a8ca846e" /></p>
+
+**Trace inspector**: every node, edge, loop and state snapshot of a run.
+
+<p align="center"><img width="800" height="500" alt="Trace inspector: a run's graph with a node selected, showing its timings, state and LLM calls" src="https://github.com/user-attachments/assets/06de6d31-95e3-4288-9c83-783fd9ec7ab1" /></p>
+
+**Dashboard**: outcomes over time, run time percentiles, slowest nodes and top errors.
+
+<p align="center"><img width="800" height="500" alt="Dashboard with run outcomes, duration percentiles, slowest nodes and top errors" src="https://github.com/user-attachments/assets/58b0d3a8-c717-40f6-bbab-a2be1d14feba" /></p>
+
+**Teams and themes**: roles and per-project access, in light and dark mode.
+
+<p align="center"><img width="800" height="500" alt="Access page with admin, developer and viewer roles, then switching to the dark theme" src="https://github.com/user-attachments/assets/98a8cd4d-4cd9-4ba9-b1a3-91d6812ca1d9" /></p>
+
 ## Getting Started
 
 The platform itself (dashboard + ingest API) runs with one command via Docker Compose —
@@ -47,27 +65,27 @@ and a quick simple success — sent through the actual ingest endpoint in the or
 format, not written to the database directly.
 </details>
 
-<details><summary>Here's the shape of tracing a graph once the SDK ships (proposed API — not published yet)</summary>
+### Send traces from orkes
+
+Attach a `WatcherSink` to your [orkes](https://github.com/hfahrudin/orkes) graph (orkes
+0.1.4 or later, plain `pip install orkes`). Nothing else in your code changes:
 
 ```python
-from orkes_watcher import tracer
+from orkes.exporters.watcher import WatcherSink
 
-tracer.init(api_key="ok_live_...")
-
-with tracer.trace("support-triage") as run:
-    with run.node("classify", "Classify intent"):
-        with run.edge("e1", "classify", "retrieve", edge_type="conditional") as edge:
-            with edge.fn_call("classify_intent") as call:
-                call.set_args({"text": user_input})
-                intent = classify_intent(user_input)
-                call.set_returns({"intent": intent})
-
-    with run.node("retrieve", "Retrieve context"):
-        ...
-    # the `with tracer.trace(...)` block finalizing cleanly marks the run "finished";
-    # an exception inside it marks it "failed" and still propagates to your code
+sink = WatcherSink(api_key="<project ingest key>", base_url="http://localhost:8000")
+graph = OrkesGraph(SearchState, name="search", trace_sinks=[sink])
 ```
-</details>
+
+- `api_key`: a project key with the **ingest** scope (project → API keys).
+- `base_url`: the watcher **backend** (port `8000` by default), not the dashboard. The
+  project's Settings page shows the exact value.
+- Sending happens in a background thread. A watcher that's down never breaks your run; at
+  most the run waits up to 3 seconds at the end for its data to be sent.
+- State, prompts and LLM replies are sent as they are. Pass `redact=` to strip secrets or
+  personal data first.
+
+The format is defined in the [trace contract](docs/contracts/contract-1.0.md).
 
 ## Core concepts
 
@@ -105,17 +123,21 @@ with tracer.trace("support-triage") as run:
 
 | Feature | Description | Status |
 |---|---|---|
-| Dashboard, trace inspector, RBAC, API keys | Core observability platform | Implemented |
-| Docker Compose deployment | Runtime-configurable, single-command self-hosted deploy | Implemented |
-| Python SDK | Manual instrumentation API (`tracer.trace`/`node`/`edge`) for any graph-based agent | Planned |
-| Live view reconnect | Automatic reconnect/backoff for the live trace WebSocket | Planned |
+| Pilot | Steer a running agent from the dashboard: pause, resume or stop it between nodes, and answer it when it asks for input. Piloted runs then show in Traces. Includes automatic reconnect for the live connection | Planned |
 | Horizontal scaling | Redis-backed live fan-out across more than one backend instance | Future |
-| Remote control (duplex) | Bidirectional channel to pause/resume/kill a running agent from the dashboard | Future |
 
 ## Documentation
 
-Backend setup, structure, migrations, and maintenance scripts:
-[`backend/README.md`](backend/README.md).
+- **Trace contract** — the format orkes (or any sender) uses to send runs to the watcher:
+  endpoint, fields, run lifecycle, response codes and versioning:
+  [`docs/contracts/contract-1.0.md`](docs/contracts/contract-1.0.md). Current version: 1.0.
+- **Changelogs** — what changed in each watcher release: [`docs/changelogs/`](docs/changelogs/).
+  A release (every push to `main`) adds one.
+
+Both are also shown in the app: click "Watcher X.Y.Z" or "contract N.N" at the bottom of the
+sidebar.
+- Backend setup, structure, migrations, and maintenance scripts:
+  [`backend/README.md`](backend/README.md).
 
 ## Contributing
 

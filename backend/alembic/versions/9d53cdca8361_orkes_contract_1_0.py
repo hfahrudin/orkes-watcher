@@ -1,6 +1,6 @@
 """orkes contract 1.0
 
-New run fields from the orkes trace contract (working_context/INTEGRATION_AGREEMENT.md),
+New run fields from the orkes trace contract (docs/contracts/contract-1.0.md),
 the per-project abandoned-run timeout, and node_stats re-keyed from node_id to node_name
 (orkes node_ids change on every graph build). Existing node_stats rows with the same
 name are merged by summing their counters.

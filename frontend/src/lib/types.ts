@@ -43,6 +43,9 @@ export interface Run {
   /** Only on GET /runs/:id. The graph's full node list from orkes, or null if the batch
    * carrying it was lost — then nodes are inferred from the edges. */
   graphNodes?: GraphNode[] | null
+  /** Only on GET /runs/:id. Graph state when the run ended: the output for a finished run,
+   * the state at the failure for a failed one. Null for older SDKs and abandoned runs. */
+  finalState?: MaybeTruncated<unknown> | null
 }
 
 export interface NodeStat {
@@ -53,7 +56,7 @@ export interface NodeStat {
 }
 
 // --- orkes trace events -------------------------------------------------------
-// Trace contract 1.0 (working_context/INTEGRATION_AGREEMENT.md §2.4–2.5). These come back
+// Trace contract 1.0 (docs/contracts/contract-1.0.md §2.4–2.5). These come back
 // from the API exactly as orkes sent them, so they're snake_case, unlike the rest of this
 // file, and times are in seconds.
 

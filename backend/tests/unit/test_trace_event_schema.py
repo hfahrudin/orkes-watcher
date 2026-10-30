@@ -1,5 +1,5 @@
 """IngestBatch validation: what the orkes trace contract 1.0 accepts and rejects
-(INTEGRATION_AGREEMENT.md §2.3–2.6), without going through HTTP."""
+(docs/contracts/contract-1.0.md §2.3–2.6), without going through HTTP."""
 
 import uuid
 
@@ -67,6 +67,16 @@ def test_edge_type_is_an_open_set():
 def test_run_end_accepts_orkes_statuses(status):
     batch = IngestBatch.model_validate(envelope([{"kind": "run_end", "status": status}]))
     assert batch.events[0].status == status
+
+
+@pytest.mark.parametrize(
+    "extra, expected",
+    [({}, None), ({"final_state": None}, None), ({"final_state": {"n": 2}}, {"n": 2}),
+     ({"final_state": {"_truncated": True, "size": 300_000}}, {"_truncated": True, "size": 300_000})],
+)
+def test_run_end_final_state_is_optional_and_kept(extra, expected):
+    batch = IngestBatch.model_validate(envelope([{"kind": "run_end", "status": "FINISHED", **extra}]))
+    assert batch.events[0].final_state == expected
 
 
 @pytest.mark.parametrize("status", ["finished", "SUCCESS", "running", ""])

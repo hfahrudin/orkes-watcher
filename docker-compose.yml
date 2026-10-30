@@ -2,6 +2,9 @@ services:
   frontend:
     build:
       context: ./frontend
+      # The in-app contract and changelog pages are built from the repo's docs/ folder.
+      additional_contexts:
+        docs: ./docs
     environment:
       # Read at container *start* (docker/docker-entrypoint.sh), not baked in at build time
       # — change this (or set API_URL directly in .env once there's a real domain) and

@@ -1,5 +1,5 @@
 """The fake orkes sink must follow the contract itself, or the tests built on it prove
-nothing (INTEGRATION_AGREEMENT.md §1.1, §2.2)."""
+nothing (docs/contracts/contract-1.0.md §1.1, §2.2)."""
 
 import pytest
 

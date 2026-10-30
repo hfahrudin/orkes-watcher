@@ -13,6 +13,8 @@ import { SettingsPage } from './pages/SettingsPage'
 import { KeysPage } from './pages/KeysPage'
 import { MembersPage } from './pages/MembersPage'
 import { AccountPage } from './pages/AccountPage'
+import { DocPage } from './pages/DocPage'
+import { PilotPage } from './pages/PilotPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -35,9 +37,12 @@ function Routed() {
       >
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/changelog/:version?" element={<DocPage kind="changelog" />} />
+        <Route path="/contract/:version?" element={<DocPage kind="contract" />} />
         <Route path="/:projectId/dashboard" element={<DashboardPage />} />
         <Route path="/:projectId/traces" element={<TracesPage />} />
         <Route path="/:projectId/traces/:runId" element={<TraceInspectorPage />} />
+        <Route path="/:projectId/pilot" element={<PilotPage />} />
         <Route path="/:projectId/settings" element={<SettingsPage />} />
         <Route path="/:projectId/keys" element={<KeysPage />} />
         <Route path="/:projectId/members" element={<MembersPage />} />

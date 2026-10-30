@@ -1,5 +1,5 @@
 """compute_run_stats / order_events / edge_endpoints: how orkes edge events become run and
-node stats (INTEGRATION_AGREEMENT.md §2.5, §3)."""
+node stats (docs/contracts/contract-1.0.md §2.5, §3)."""
 
 from app.services.run_stats import compute_run_stats, edge_endpoints, order_events
 
@@ -53,7 +53,7 @@ def test_loops_are_repeat_traversals_of_the_same_edge_id():
 
 
 def test_reentering_a_node_through_a_different_edge_is_not_a_loop():
-    """Accepted v1 limitation (agreement §3)."""
+    """Accepted v1 limitation (contract §3)."""
     events = [edge("e1", 1, "a", "b"), edge("e2", 2, "b", "a"), edge("e3", 3, "a", "END")]
     assert compute_run_stats(events).loop_count == 0
 

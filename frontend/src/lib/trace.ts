@@ -1,4 +1,4 @@
-// Pure helpers for orkes trace events (contract 1.0, INTEGRATION_AGREEMENT.md §2.5).
+// Pure helpers for orkes trace events (contract 1.0, docs/contracts/contract-1.0.md §2.5).
 // No React, no I/O, type-only imports.
 import type { EdgeEvent, GraphNode, TraceEvent, Truncated } from './types'
 

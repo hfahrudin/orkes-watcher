@@ -2,7 +2,7 @@
 real `POST /ingest/events` HTTP endpoint exactly as orkes's WatcherSink would — not by
 writing to Postgres/MinIO directly.
 
-Payloads follow the orkes trace contract 1.0 (working_context/INTEGRATION_AGREEMENT.md §2):
+Payloads follow the orkes trace contract 1.0 (docs/contracts/contract-1.0.md §2):
 snake_case, times in seconds, orkes's own edge types and status strings. Each run is sent
 the way the sink sends it: a first batch with the graph's node list and no events, then the
 edges, then a last batch ending in run_end. Treat this as a live reference client for the
@@ -129,7 +129,8 @@ class RunBuilder:
             run_number=run_number, started_at=started_at, elapsed=self.clock - started_at,
         )
 
-    def run_end(self, status: str, error: str | None = None, failed_node: str | None = None) -> dict:
+    def run_end(self, status: str, final_state: dict, error: str | None = None, failed_node: str | None = None) -> dict:
+        """final_state: the run's output (FINISHED) or the state when it failed (FAILED)."""
         return {
             "kind": "run_end",
             "status": status,
@@ -137,6 +138,7 @@ class RunBuilder:
             "elapsed_time": self.clock - self.start_time,
             "error": error,
             "failed_node": failed_node,
+            "final_state": final_state,
         }
 
 
@@ -182,7 +184,8 @@ def happy_path_with_parallel_branch(start: float) -> list[dict]:
         "answer", "END", "__forward__", 0.62, {"confidence": 0.94},
         llm_traces=[_llm("Answer the customer using the context.", question, "Go to Settings > API keys, revoke the old key, and generate a new one.")],
     )
-    return [*b.events, b.run_end("FINISHED")]
+    final = {"confidence": 0.94, "answer": "Go to Settings > API keys, revoke the old key, and generate a new one."}
+    return [*b.events, b.run_end("FINISHED", final)]
 
 
 def retry_loop_that_escalates(start: float) -> list[dict]:
@@ -195,7 +198,7 @@ def retry_loop_that_escalates(start: float) -> list[dict]:
         b.edge("retrieve", "classify", "__forward__", 0.65, {"intent": "billing_dispute", "confidence": confidence, "attempt": attempt})
     b.edge("classify", "escalate", "__conditional__", 0.15, {"confidence": 0.28, "reason": "low_confidence_after_retries"}, extra_elapsed=0.004)
     b.edge("escalate", "END", "__forward__", 0.05, {"escalated_to": "human_queue"})
-    return [*b.events, b.run_end("FINISHED")]
+    return [*b.events, b.run_end("FINISHED", {"escalated_to": "human_queue", "ticket_id": "T-4821"})]
 
 
 def crash_in_routing_gate(start: float) -> list[dict]:
@@ -210,7 +213,7 @@ def crash_in_routing_gate(start: float) -> list[dict]:
         '    return ROUTES[state["intent"]]\n'
         "KeyError: 'intent'"
     )
-    return [*b.events, b.run_end("FAILED", error=error, failed_node="classify")]
+    return [*b.events, b.run_end("FAILED", {"input": "???", "intent": None}, error=error, failed_node="classify")]
 
 
 def quick_simple_success(start: float) -> list[dict]:
@@ -219,7 +222,7 @@ def quick_simple_success(start: float) -> list[dict]:
     b.edge("START", "classify", "__forward__", 0.001, {"input": "hi"})
     b.edge("classify", "answer", "__conditional__", 0.043, {"input": "hi", "intent": "greeting"}, extra_elapsed=0.001)
     b.edge("answer", "END", "__forward__", 0.045, {"answer": "Hey! How can I help today?"})
-    return [*b.events, b.run_end("FINISHED")]
+    return [*b.events, b.run_end("FINISHED", {"input": "hi", "intent": "greeting", "answer": "Hey! How can I help today?"})]
 
 
 async def ensure_project_and_key() -> tuple[str, str]:

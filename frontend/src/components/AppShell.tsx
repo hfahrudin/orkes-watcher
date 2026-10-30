@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 import type { Project, WatcherVersion } from '../lib/types'
 import { BrandLockup } from './Logo'
+import { PilotIcon, TracesIcon } from './NavIcons'
 import { RoleGate } from './RoleGate'
 
-const PROJECT_NAV = [
-  { to: 'dashboard', label: 'Dashboard', icon: 'ph-gauge' },
-  { to: 'traces', label: 'Traces', icon: 'ph-list-magnifying-glass' },
-  { to: 'settings', label: 'Settings', icon: 'ph-gear-six' },
+const PROJECT_NAV: { to: string; label: string; icon: React.ReactNode; soon?: boolean }[] = [
+  { to: 'dashboard', label: 'Dashboard', icon: <i className="ph ph-gauge" /> },
+  { to: 'traces', label: 'Traces', icon: <TracesIcon /> },
+  { to: 'pilot', label: 'Pilot', icon: <PilotIcon />, soon: true },
+  { to: 'settings', label: 'Settings', icon: <i className="ph ph-gear-six" /> },
 ]
 
 // Per the Access page's own role cards: Developer can create ingest keys, but only
@@ -117,9 +119,10 @@ export function AppShell() {
             </div>
             <nav className="nav-group">
               {PROJECT_NAV.map((item) => (
-                <NavLink key={item.to} to={`/${current.id}/${item.to}`} title={tip(item.label)} className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
-                  <i className={`ph ${item.icon}`} />
+                <NavLink key={item.to} to={`/${current.id}/${item.to}`} title={tip(item.soon ? `${item.label} (coming soon)` : item.label)} className={({ isActive }) => `sideitem${isActive ? ' active' : ''}`}>
+                  {item.icon}
                   <span className="label">{item.label}</span>
+                  {item.soon && <span className="label nav-soon">Soon</span>}
                 </NavLink>
               ))}
             </nav>
@@ -143,8 +146,20 @@ export function AppShell() {
             <i className={`ph ${resolved === 'dark' ? 'ph-sun' : 'ph-moon'}`} />
             <span className="label">{resolved === 'dark' ? 'Light mode' : 'Dark mode'}</span>
           </button>
-          <div className="sdk-status" title="The orkes trace contract versions this watcher accepts">
-            {version ? `Watcher ${version.watcher_version} · contract ${version.contract.latest}` : 'Watcher version unavailable'}
+          <div className="sdk-status">
+            {version ? (
+              <>
+                <Link to={`/changelog/${version.watcher_version}`} title="What's new in this watcher version">
+                  Watcher {version.watcher_version}
+                </Link>
+                {' · '}
+                <Link to={`/contract/${version.contract.latest}`} title="The orkes trace contract this watcher accepts">
+                  contract {version.contract.latest}
+                </Link>
+              </>
+            ) : (
+              'Watcher version unavailable'
+            )}
           </div>
           <button className="sideitem sign-out" title={tip('Sign out')} style={{ color: 'var(--c-muted)' }} onClick={async () => { await logout(); navigate('/login') }}>
             <i className="ph ph-sign-out" />

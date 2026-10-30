@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
+# The repo's docs/ (contracts, changelogs) for the in-app doc pages: passed in as the "docs"
+# build context by docker-compose.yml, placed where src/lib/docs.ts looks for it (../docs).
+COPY --from=docs . /docs
 RUN npm run build
 
 FROM nginx:1.27-alpine AS serve
