@@ -98,3 +98,28 @@ async def test_revoke_key(admin_client: AsyncClient):
     keys = (await admin_client.get(f"/projects/{project_id}/keys")).json()
     revoked = next(k for k in keys if k["id"] == key["id"])
     assert revoked["scope"] == "revoked"
+
+
+async def test_last_admin_cannot_be_demoted(admin_client: AsyncClient):
+    """QA regression: the only admin could demote themselves, leaving nobody to manage the install."""
+    project_id = await _make_project(admin_client)
+    me = (await admin_client.get("/me")).json()
+    r = await admin_client.patch(f"/projects/{project_id}/members/{me['id']}", json={"role": "viewer"})
+    assert r.status_code == 409
+    assert (await admin_client.get("/me")).json()["role"] == "admin"
+
+
+async def test_admin_can_be_demoted_when_another_admin_exists(admin_client: AsyncClient, login_as):
+    project_id = await _make_project(admin_client)
+    await login_as("second-admin@test.local", "admin")
+    me = (await admin_client.get("/me")).json()
+    r = await admin_client.patch(f"/projects/{project_id}/members/{me['id']}", json={"role": "developer"})
+    assert r.status_code == 200
+
+
+async def test_role_change_requires_membership_of_that_project(admin_client: AsyncClient):
+    project_a = await _make_project(admin_client)
+    project_b = (await admin_client.post("/projects", json={"name": "other", "env": "local"})).json()["id"]
+    member = (await admin_client.post(f"/projects/{project_a}/members", json={"email": "a-only@test.local", "role": "viewer"})).json()["member"]
+    r = await admin_client.patch(f"/projects/{project_b}/members/{member['userId']}", json={"role": "developer"})
+    assert r.status_code == 404

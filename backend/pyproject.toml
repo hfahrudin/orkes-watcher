@@ -30,3 +30,5 @@ package = false
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
+# Load tests are opt-in: `uv run pytest tests/load -s`.
+testpaths = ["tests/unit", "tests/integrations"]

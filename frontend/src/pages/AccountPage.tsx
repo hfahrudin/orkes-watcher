@@ -87,7 +87,7 @@ export function AccountPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <span style={{ fontSize: 12, color: 'color-mix(in srgb, var(--color-text) 45%, transparent)' }}>
+        <span style={{ fontSize: 12, color: 'var(--c-text-faint)' }}>
           {user?.name} · {user?.role}
         </span>
         <h4 style={{ margin: 0 }}>Your account</h4>

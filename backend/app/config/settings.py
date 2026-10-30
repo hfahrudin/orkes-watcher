@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,9 @@ class Settings(BaseSettings):
     minio_bucket: str = "orkes-traces"
 
     session_cookie_name: str = "orkes_session"
+    # Absolute lifetime of a sign-in, enforced on the server: a session older than this is
+    # rejected and deleted however recently it was used. Also the cookie's lifetime.
+    session_lifetime_days: int = Field(default=30, ge=1)
     # False by default for local HTTP dev — a Secure cookie set over plain http:// is
     # rejected or never sent back by most browsers. Set true once this actually sits
     # behind HTTPS (see ORKES_COOKIE_SECURE in docker-compose.yml/.env.example).
@@ -20,6 +24,10 @@ class Settings(BaseSettings):
     # MVP: no bus, single process — buffered ingest + live fan-out live in-memory.
     # None of this survives a restart; see ARCHITECTURE.md's "cut for MVP" list.
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
+
+    # How often the in-process sweep checks for abandoned runs (no batch for a project's
+    # abandon_after_minutes). 0 disables it.
+    abandon_sweep_interval_seconds: int = 60
 
     bootstrap_admin_email: str = "admin@orkes.local"
     bootstrap_admin_password: str = "changeme"

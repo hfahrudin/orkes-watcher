@@ -23,6 +23,8 @@ async def main() -> None:
         projects = (await db.execute(select(Project))).scalars().all()
         total_deleted = 0
         for project in projects:
+            if project.retention_days is None:  # "never delete"
+                continue
             cutoff = datetime.now(timezone.utc) - timedelta(days=project.retention_days)
             expired = await run_repository.delete_expired(db, project.id, before=cutoff)
             if not expired:

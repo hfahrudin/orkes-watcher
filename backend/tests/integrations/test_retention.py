@@ -28,3 +28,17 @@ async def test_delete_expired_only_touches_its_own_project(admin_client: AsyncCl
 
         assert await run_repository.get(db, run_a.id) is None
         assert await run_repository.get(db, run_b.id) is not None
+
+
+async def test_retention_script_skips_never_delete_projects(admin_client: AsyncClient):
+    from scripts import retention
+
+    keep = (await admin_client.post("/projects", json={"name": "keep", "env": "local"})).json()
+    await admin_client.patch(f"/projects/{keep['id']}", json={"retentionDays": None})
+    old = datetime.now(timezone.utc) - timedelta(days=900)
+    async with db_module.SessionLocal() as db:
+        run = await run_repository.create(db, run_id=uuid.uuid4(), project_id=uuid.UUID(keep["id"]), graph_name="g", started_at=old)
+        await db.commit()
+    await retention.main()
+    async with db_module.SessionLocal() as db:
+        assert await run_repository.get(db, run.id) is not None

@@ -6,5 +6,7 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // The contract and changelog pages bundle markdown from the repo's docs/ (src/lib/docs.ts).
+    fs: { allow: ['..'] },
   },
 })

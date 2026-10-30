@@ -16,18 +16,37 @@ function initials(name: string) {
   return name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
 }
 
+// Per-browser preference for the role preselected in Create user. Storage can throw or be
+// empty (private windows, blocked site data), so it falls back to developer.
+const DEFAULT_ROLE_KEY = 'orkes-default-invite-role'
+function loadDefaultRole(): Role {
+  try {
+    const v = localStorage.getItem(DEFAULT_ROLE_KEY)
+    return v === 'viewer' || v === 'developer' ? v : 'developer'
+  } catch {
+    return 'developer'
+  }
+}
+function saveDefaultRole(role: Role) {
+  try {
+    localStorage.setItem(DEFAULT_ROLE_KEY, role)
+  } catch {
+    // not saved; the choice still applies until the page reloads
+  }
+}
+
 function activationLink(token: string) {
   return `${window.location.origin}/activate?token=${token}`
 }
 
 export function MembersPage() {
   const { projectId } = useParams<{ projectId: string }>()
-  const { hasRole } = useAuth()
+  const { hasRole, user } = useAuth()
   const [members, setMembers] = useState<Member[]>([])
   const [inviting, setInviting] = useState(false)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('developer')
-  const [defaultRole, setDefaultRole] = useState<Role>('developer')
+  const [defaultRole, setDefaultRoleState] = useState<Role>(loadDefaultRole)
   const [activationDialog, setActivationDialog] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -84,6 +103,16 @@ export function MembersPage() {
     }
   }
 
+  function setDefaultRole(r: Role) {
+    setDefaultRoleState(r)
+    saveDefaultRole(r)
+  }
+
+  function openInvite() {
+    setRole(defaultRole)
+    setInviting(true)
+  }
+
   function copyLink(link: string) {
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true)
@@ -98,12 +127,12 @@ export function MembersPage() {
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ margin: 0 }}>Access</h4>
-          <span style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--color-text) 52%, transparent)' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--c-text-dim)' }}>
             Accounts are created here by an admin. Roles apply to this project.
           </span>
         </div>
         <RoleGate roles={['admin']}>
-          <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setInviting(true)}>
+          <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={openInvite}>
             <i className="ph ph-user-plus" />
             Create user
           </button>
@@ -138,7 +167,7 @@ export function MembersPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <h5 style={{ margin: 0 }}>Members</h5>
-          <span style={{ fontSize: 12, color: 'color-mix(in srgb, var(--color-text) 45%, transparent)' }}>{members.length} on this project</span>
+          <span style={{ fontSize: 12, color: 'var(--c-text-faint)' }}>{members.length} on this project</span>
         </div>
         <table className="table">
           <thead>
@@ -159,13 +188,20 @@ export function MembersPage() {
                     </span>
                     <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3 }}>
                       <span>{m.name}</span>
-                      <span style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 45%, transparent)' }}>{m.email}</span>
+                      <span style={{ fontSize: 11.5, color: 'var(--c-text-faint)' }}>{m.email}</span>
                     </div>
                   </div>
                 </td>
                 <td>
                   {hasRole('admin') ? (
-                    <select className="input" style={{ minHeight: 30, width: 130 }} value={m.role} onChange={(e) => changeRole(m.userId, e.target.value as Role)}>
+                    <select
+                      className="input"
+                      style={{ minHeight: 30, width: 130 }}
+                      value={m.role}
+                      disabled={m.userId === user?.id}
+                      title={m.userId === user?.id ? "You can't change your own role. Ask another admin." : undefined}
+                      onChange={(e) => changeRole(m.userId, e.target.value as Role)}
+                    >
                       <option value="admin">Admin</option>
                       <option value="developer">Developer</option>
                       <option value="viewer">Viewer</option>

@@ -36,7 +36,7 @@ async def update_project(
     _user: User = Depends(require_role("admin", "developer")),
     db: AsyncSession = Depends(get_db),
 ):
-    updated = await project_repository.update(db, project, **body.model_dump())
+    updated = await project_repository.update(db, project, **body.model_dump(exclude_unset=True))
     await db.commit()
     return updated
 

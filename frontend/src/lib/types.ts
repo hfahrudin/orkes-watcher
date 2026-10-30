@@ -12,8 +12,11 @@ export interface Project {
   id: string
   name: string
   env: 'production' | 'staging' | 'local'
-  retentionDays: number
+  /** null = traces are never deleted. */
+  retentionDays: number | null
   samplingPct: number
+  /** A running run with no new batch for this long is marked failed ("abandoned"). */
+  abandonAfterMinutes: number
   createdAt: string
 }
 
@@ -31,51 +34,103 @@ export interface Run {
   loopCount: number
   elapsedUs: number | null
   error: string | null
+  failedNode: string | null
+  graphDescription: string | null
+  contractVersion: string | null
+  sdkVersion: string | null
+  /** Last time any batch arrived for this run. */
+  lastEventAt: string | null
+  /** Only on GET /runs/:id. The graph's full node list from orkes, or null if the batch
+   * carrying it was lost — then nodes are inferred from the edges. */
+  graphNodes?: GraphNode[] | null
+  /** Only on GET /runs/:id. Graph state when the run ended: the output for a finished run,
+   * the state at the failure for a failed one. Null for older SDKs and abandoned runs. */
+  finalState?: MaybeTruncated<unknown> | null
 }
 
 export interface NodeStat {
-  nodeId: string
   nodeName: string
   runCount: number
   visitCount: number
   totalDurationUs: number
 }
 
-export interface FnCall {
-  name: string
-  args: Record<string, unknown>
-  returns?: Record<string, unknown>
-  durationUs: number
+// --- orkes trace events -------------------------------------------------------
+// Trace contract 1.0 (docs/contracts/contract-1.0.md §2.4–2.5). These come back
+// from the API exactly as orkes sent them, so they're snake_case, unlike the rest of this
+// file, and times are in seconds.
+
+/** What orkes's sink puts in place of a field that was too large to send. */
+export interface Truncated {
+  _truncated: true
+  size: number
+}
+export type MaybeTruncated<T> = T | Truncated
+
+export interface GraphNode {
+  node_id: string
+  node_name: string
+  node_description: string | null
+  meta: Record<string, unknown>
 }
 
-export interface NodeEvent {
-  kind: 'node'
-  nodeId: string
-  nodeName: string
-  seq: number
-  visitIndex: number
-  enteredAt: string
-  exitedAt: string | null
+export interface FunctionTrace {
+  function_name: string
+  input_args: unknown[]
+  input_kwargs: Record<string, unknown>
+  return_value: unknown
+  elapsed: number
+}
+
+export interface LLMMessage {
+  role: string
+  content: unknown
+}
+
+export interface LLMTrace {
+  messages: { messages: LLMMessage[] } | LLMMessage[]
+  tools: unknown
+  parsed_response: { content_type?: string; content: unknown } | null
+  model: string
+  settings: Record<string, unknown> | null
 }
 
 export interface EdgeEvent {
   kind: 'edge'
-  edgeId: string
-  fromNode: string
-  toNode: string
-  // Not a closed union — the backend accepts any string here (it never branches on the
-  // value, only forwards it) so a new SDK-introduced edge type doesn't break ingest. The
-  // three known values below get real styling; anything else falls back to the "forward"
-  // look rather than rendering invisibly. See working_context/TRACES_CONTRACT.md.
-  edgeType: string
-  runSeq: number
-  passesLeft: number | null
-  elapsedUs: number
-  stateSnapshot: Record<string, unknown>
-  fnCalls: FnCall[]
+  /** Same id on every traversal of one structural edge, so a repeat is a loop pass. */
+  edge_id: string
+  /** Starts at 1, unique per run: the ordering and selection key. */
+  edge_run_number: number
+  from_node: string
+  /** A list for parallel edges; "N/A" when no destination was chosen. */
+  to_node: string | string[]
+  /** "__forward__" / "__conditional__" / "__parallel__", not a closed set. */
+  edge_type: string | null
+  passes_left?: number | null
+  /** Unix seconds. */
+  started_at?: number | null
+  /** Seconds: the source node plus its gate (conditional) or all branches (parallel). */
+  elapsed: number
+  /** Seconds in the source node's function only. */
+  node_elapsed?: number | null
+  state_snapshot: MaybeTruncated<Record<string, unknown>>
+  meta: MaybeTruncated<Record<string, unknown>>
+  function_traces: MaybeTruncated<FunctionTrace[]>
+  llm_traces: MaybeTruncated<LLMTrace[]>
 }
 
-export type TraceEvent = NodeEvent | EdgeEvent
+/** An event kind from a newer orkes; kept and shown raw, never counted. */
+export interface OtherEvent {
+  kind: string
+  [field: string]: unknown
+}
+
+export type TraceEvent = EdgeEvent | OtherEvent
+
+export interface WatcherVersion {
+  watcher_version: string
+  contract: { supported_majors: number[]; latest: string }
+}
 
 export interface ApiKey {
   id: string

@@ -30,3 +30,8 @@ async def create(db: AsyncSession, *, email: str, name: str, password_hash: str,
 async def count_all(db: AsyncSession) -> int:
     result = await db.execute(select(func.count()).select_from(User))
     return result.scalar_one()
+
+
+async def count_active_admins(db: AsyncSession) -> int:
+    result = await db.execute(select(func.count()).select_from(User).where(User.role == "admin", User.status == "active"))
+    return result.scalar_one()

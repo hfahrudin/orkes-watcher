@@ -40,8 +40,8 @@ export function ProjectsPage() {
         setProjects(list)
         const entries = await Promise.all(
           list.map(async (p) => {
-            const [runs, keys] = await Promise.all([api.listRuns(p.id), api.listApiKeys(p.id)])
-            return [p.id, { runs: runs.length, keys: keys.length }] as const
+            const [runs, keys] = await Promise.all([api.countRuns(p.id), api.listApiKeys(p.id).catch(() => [])])
+            return [p.id, { runs, keys: keys.length }] as const
           }),
         )
         setStats(Object.fromEntries(entries))
@@ -94,17 +94,17 @@ export function ProjectsPage() {
                 <span className="mono" style={{ fontSize: 15 }}>{p.name}</span>
                 <span className={ENV_TAG[p.env]} style={{ marginLeft: 'auto' }}>{p.env}</span>
               </div>
-              <span style={{ fontSize: 12.5, color: 'color-mix(in srgb, var(--c-text) 58%, transparent)' }}>{ENV_DESC[p.env]}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--c-text-dim)' }}>{ENV_DESC[p.env]}</span>
               {s && (
-                <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 50%, transparent)', paddingTop: 2 }}>
+                <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--c-text-dim)', paddingTop: 2 }}>
                   <span>{s.runs} runs</span>
                   <span>{s.keys} keys</span>
-                  <span>retention {p.retentionDays}d</span>
+                  <span>{p.retentionDays === null ? 'kept forever' : `retention ${p.retentionDays}d`}</span>
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-accent)' }} />
-                <span style={{ fontSize: 11.5, color: 'color-mix(in srgb, var(--c-text) 55%, transparent)' }}>healthy</span>
+                <span style={{ fontSize: 11.5, color: 'var(--c-text-dim)' }}>healthy</span>
                 <i className="ph ph-arrow-right" style={{ marginLeft: 'auto', color: 'var(--color-neutral-600)' }} />
               </div>
             </button>
@@ -119,7 +119,7 @@ export function ProjectsPage() {
           >
             <i className="ph ph-plus" style={{ fontSize: 18, color: 'var(--color-accent)' }} />
             <span style={{ fontFamily: 'var(--font-heading)', fontSize: 15 }}>New project</span>
-            <span style={{ fontSize: 12, color: 'color-mix(in srgb, var(--c-text) 50%, transparent)' }}>
+            <span style={{ fontSize: 12, color: 'var(--c-text-dim)' }}>
               Creates an ingest namespace and its first API key.
             </span>
           </button>
